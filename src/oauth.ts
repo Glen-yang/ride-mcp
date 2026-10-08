@@ -462,6 +462,7 @@ export class RideOAuthProvider implements OAuthServerProvider {
     params: AuthorizationParams,
     res: Response,
   ): Promise<void> {
+    params.scopes = validateSupportedScopes(params.scopes ?? [...DEFAULT_RIDE_OAUTH_SCOPES]);
     res.status(200).type("html").send(renderAuthorizePage(client, params, this.options.authPage));
   }
 

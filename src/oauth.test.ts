@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { request as httpRequest } from "node:http";
 import type { AddressInfo } from "node:net";
+import type { Response } from "express";
 import { afterEach, describe, it } from "node:test";
 
 import type { OAuthClientInformationFull } from "@modelcontextprotocol/sdk/shared/auth.js";
@@ -39,6 +40,17 @@ function createProvider() {
 }
 
 describe("Ride OAuth scope enforcement", () => {
+  it("rejects unsupported scopes before rendering consent", async () => {
+    await assert.rejects(
+      createProvider().authorize(client, {
+        redirectUri: client.redirect_uris[0],
+        codeChallenge: "challenge",
+        scopes: ["ride:unknown"],
+      }, {} as Response),
+      { name: "InvalidScopeError" },
+    );
+  });
+
   it("rejects unsupported scopes during authorization", async () => {
     const provider = createProvider();
     await provider.clientsStore.registerClient!(client);
