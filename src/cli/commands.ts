@@ -120,7 +120,7 @@ export async function runCli(argv: string[]): Promise<void> {
     return;
   }
   if (command === "mcp") {
-    const server = new McpServer({ name: "ride", version: "0.2.0" });
+    const server = new McpServer({ name: "ride", version: "0.2.1" });
     registerAgentTools(server, async (tool, input) =>
       withSessionLock(async () => {
         const session = await loadSession();

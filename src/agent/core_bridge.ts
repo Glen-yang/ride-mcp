@@ -332,7 +332,15 @@ export class CoreBridge {
       atr_pct: atr,
       venue_max_leverage: 8,
       min_notional_usdc: "10",
-      last_trade_at: raw.dailyRescore?.lastTradeAt ?? null,
+      last_trade_at: (() => {
+        const at =
+          raw.tradeMetrics?.status === "available"
+            ? raw.tradeMetrics.newestFillTime
+            : raw.dailyRescore?.lastTradeAt;
+        return Number.isSafeInteger(at) && at > 0 && at <= now() + 1000
+          ? at
+          : null;
+      })(),
     };
   }
   async candidates(): Promise<Candidate[]> {

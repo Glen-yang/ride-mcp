@@ -54,7 +54,7 @@ try {
     const home = join(temp, client);
     const result = await setup(client, "https://ride.test/mcp", home);
     const text = await readFile(result.config, "utf8");
-    assert(text.includes("github:Glen-yang/ride-mcp#v0.2.0"));
+    assert(text.includes("github:Glen-yang/ride-mcp#v0.2.1"));
     assert(
       (await readFile(join(result.skill, "SKILL.md"), "utf8")).includes(
         "name: ride",

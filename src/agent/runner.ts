@@ -187,22 +187,35 @@ export class AgentRunner {
             if (now() - (s.reviewed_at ?? 0) >= 86400_000) {
               const updated = await adapter.profile(s.trader.id);
               if (updated.scored_at >= s.trader.scored_at) {
+                const inactive =
+                  updated.last_trade_at == null
+                    ? null
+                    : now() - updated.last_trade_at;
+                const normal = Math.max(
+                  7 * 86400_000,
+                  (updated.median_hold_hours ?? 168) * 3600_000 * 2,
+                );
                 if (
                   updated.eligibility !== "PASS" ||
                   updated.score < s.trader.score - 10 ||
-                  updated.style !== s.trader.style
+                  updated.style !== s.trader.style ||
+                  (inactive != null && inactive > normal)
                 )
                   eventOnce(
                     state,
                     "daily_review",
                     p.id,
-                    "Trader score or trading style changed. Review this copy.",
+                    "Trader score, style or trading activity needs review.",
                     {
                       copy_id: s.copy_id,
                       previous_score: s.trader.score,
                       current_score: updated.score,
                       previous_style: s.trader.style,
                       current_style: updated.style,
+                      inactive_days:
+                        inactive != null && inactive > normal
+                          ? Math.floor(inactive / 86400_000)
+                          : null,
                     },
                   );
                 s.trader = updated;
@@ -294,7 +307,14 @@ export class AgentRunner {
               if (t.state === "wind_down") {
                 if (current.isZero() || current.isPositive() !== q.isPositive())
                   q = D(0);
-                else if (q.abs().gt(current.abs())) q = current;
+                else {
+                  const previous = s.intents[x.key]?.quantity;
+                  const ceiling =
+                    previous == null
+                      ? current.abs()
+                      : D.min(current.abs(), D(previous).abs());
+                  q = D.min(q.abs(), ceiling).times(q.isPositive() ? 1 : -1);
+                }
               }
               if (
                 !q.isZero() &&

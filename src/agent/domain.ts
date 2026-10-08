@@ -220,6 +220,20 @@ export function allocate(budget: Decimal.Value, count: number): string[] {
       .toFixed(6),
   );
 }
+function recommendedLeverage(p: Preferences, c: Candidate): number | null {
+  const drawdown = c.source_drawdown_pct;
+  if (drawdown == null || !Number.isFinite(drawdown) || drawdown < 0)
+    return null;
+  const riskCap =
+    drawdown === 0 ? 8 : Math.floor(p.loss_trigger_pct / drawdown);
+  if (c.market === "prediction") return riskCap >= 1 ? 1 : null;
+  const atrCap =
+    c.atr_pct == null
+      ? 3
+      : Math.max(3, Math.min(8, Math.floor(12 / Math.max(c.atr_pct, 0.01))));
+  const cap = Math.min(c.venue_max_leverage, atrCap, riskCap);
+  return cap >= 3 ? cap : null;
+}
 export function recommend(p: Preferences, candidates: Candidate[]): Plan {
   const allowed = candidates
     .filter(
@@ -229,6 +243,7 @@ export function recommend(p: Preferences, candidates: Candidate[]): Plan {
         fresh(c.scored_at, 36 * 3600_000) &&
         (p.market === "both" || c.market === p.market) &&
         c.assets.length > 0 &&
+        recommendedLeverage(p, c) !== null &&
         (c.market === "prediction" ||
           c.assets.every(
             (a) =>
@@ -276,18 +291,7 @@ export function recommend(p: Preferences, candidates: Candidate[]): Plan {
       copy_id: uid("copy"),
       trader: c,
       amount_usdc: amounts[i],
-      leverage_cap:
-        c.market === "prediction"
-          ? 1
-          : Math.min(
-              c.venue_max_leverage,
-              c.atr_pct == null
-                ? 3
-                : Math.max(
-                    3,
-                    Math.min(8, Math.floor(12 / Math.max(c.atr_pct, 0.01))),
-                  ),
-            ),
+      leverage_cap: recommendedLeverage(p, c)!,
       stop_loss_pct: 30,
     })),
   };
@@ -420,36 +424,52 @@ export function pnl(p: Portfolio): {
       sleeves: p.sleeves.map((s) => ({ copy_id: s.copy_id, net_usdc: null })),
       external_flows_usdc: cash(p.flow_total),
     };
-  const sleeves = p.sleeves.map((s) => ({
+  const rawSleeves = p.sleeves.map((s) => ({
     copy_id: s.copy_id,
-    net_usdc: cash(
-      Object.values(s.lots).reduce(
-        (n, l) =>
-          n
-            .plus(l.realized)
-            .minus(l.fees)
-            .plus(l.funding)
-            .plus(
-              D(l.quantity)
-                .times(p.snapshot!.prices[l.key] ?? 0)
-                .minus(l.cost),
-            ),
-        D(0),
-      ),
+    net_usdc: Object.values(s.lots).reduce(
+      (n, l) =>
+        n
+          .plus(l.realized)
+          .minus(l.fees)
+          .plus(l.funding)
+          .plus(
+            D(l.quantity)
+              .times(p.snapshot!.prices[l.key] ?? 0)
+              .minus(l.cost),
+          ),
+      D(0),
     ),
   }));
-  const total = sleeves.reduce((n, s) => n.plus(s.net_usdc), D(0));
+  const total = rawSleeves.reduce((n, s) => n.plus(s.net_usdc), D(0));
   const accountDelta = D(p.snapshot.account_value_usdc)
     .minus(p.initial_equity ?? 0)
     .minus(p.flow_total);
   if (total.minus(accountDelta).abs().gt("0.000001"))
     return {
       net_usdc: null,
-      sleeves: sleeves.map((s) => ({ ...s, net_usdc: null })),
+      sleeves: rawSleeves.map((s) => ({ copy_id: s.copy_id, net_usdc: null })),
       external_flows_usdc: cash(p.flow_total),
     };
+  // Validate unrounded attribution, then conserve the verified account delta
+  // when presenting each sleeve at micro-USDC precision.
+  const shares = rawSleeves.map((s) => s.net_usdc.toDecimalPlaces(6));
+  const remainder = D(cash(accountDelta)).minus(
+    shares.reduce((n, share) => n.plus(share), D(0)),
+  );
+  if (!remainder.isZero() && shares.length) {
+    const owner = rawSleeves.reduce(
+      (best, s, i) =>
+        s.net_usdc.abs().gt(rawSleeves[best].net_usdc.abs()) ? i : best,
+      0,
+    );
+    shares[owner] = shares[owner].plus(remainder);
+  }
+  const sleeves = rawSleeves.map((s, i) => ({
+    copy_id: s.copy_id,
+    net_usdc: cash(shares[i].isZero() ? 0 : shares[i]),
+  }));
   return {
-    net_usdc: cash(total),
+    net_usdc: cash(accountDelta),
     sleeves,
     external_flows_usdc: cash(p.flow_total),
   };

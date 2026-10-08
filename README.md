@@ -9,7 +9,7 @@ Ride Agent V3 selects a diversified trader basket and manages owned Perps and pr
 Node.js 20+ and npm are required. Install the MCP configuration and Skill together:
 
 ```sh
-npx -y github:Glen-yang/ride-mcp#v0.2.0 setup --client codex
+npx -y github:Glen-yang/ride-mcp#v0.2.1 setup --client codex
 ```
 
 Use `--client claude-code` or `--client cursor` for those clients. `--server https://YOUR-RIDE-HOST/mcp` selects an enabled V3 deployment. Setup merges existing configuration, preserves other servers and refuses to overwrite a foreign `ride` entry. Restart your client after setup. MCP invokes the same pinned GitHub version.
@@ -20,7 +20,7 @@ For the Skill alone:
 npx skills add Glen-yang/ride-mcp --skill ride
 ```
 
-The Skill-only command does not register an MCP server. For standalone CLI commands, prefix the commands below with `npx -y github:Glen-yang/ride-mcp#v0.2.0`, or install the pinned repository with `npm install -g github:Glen-yang/ride-mcp#v0.2.0` to obtain `ride`.
+The Skill-only command does not register an MCP server. For standalone CLI commands, prefix the commands below with `npx -y github:Glen-yang/ride-mcp#v0.2.1`, or install the pinned repository with `npm install -g github:Glen-yang/ride-mcp#v0.2.1` to obtain `ride`.
 
 ## Use
 
@@ -55,6 +55,8 @@ ride updates --limit 20
 Write tools create expiring, frozen proposals. Execution requires human approval inside Ride, or an explicit, revocable Ride grant bounded by portfolio, total/action/daily amounts, expiry, assets, markets and leverage. MCP OAuth trade scope does not itself authorize execution. There are no transfer or withdrawal tools.
 
 Recommendations use fresh venue-specific General-pool scores, choose 3–6 feasible sleeves and conserve every micro-USDC. Perps defaults to BTC/ETH, ATR caps are 3–8x subject to source and venue limits, prediction leverage is 1x, sleeve stop loss defaults to 30%, and initial entries outside the 0.2% source-entry boundary wait for a new source cycle. New source assets outside the approved Perps preferences are excluded.
+
+Suggested leverage is also capped so historical source drawdown multiplied by leverage stays within the user's loss percentage. Missing drawdown evidence or a Perps risk cap below 3x excludes that candidate.
 
 A dedicated account and independent fill ledger keep sleeve ownership separate from legacy copy/manual trading. Gross concentration is limited to 60%; opposite Perps positions can offset their exchange target while retaining gross sleeve attribution. Distinct prediction outcomes retain separate token ownership. Fees, funding and external flows are attributed from account evidence. Incomplete profit is `null`, never fabricated from trader profit or treated as zero.
 
@@ -93,5 +95,13 @@ npm pack --dry-run
 ```
 
 Run the real PostgreSQL durability test with `RIDE_AGENT_TEST_DATABASE_URL` pointing to an isolated disposable database. Offline tests do not place real venue orders. GitHub CI checks schemas, permissions, accounting, OAuth, packaging and durable transactions.
+
+To test the actual feature journey locally, use an isolated disposable PostgreSQL database:
+
+```sh
+RIDE_AGENT_FUNCTIONAL_DATABASE_URL='postgresql://USER@127.0.0.1:5432/ride_functional_acceptance' npm run test:functional
+```
+
+This starts the real MCP gateway, HTTP backend, OAuth PKCE flow and CLI, and runs 27 scenarios through all ten tools with persisted PostgreSQL state. It covers recommendation risk filters, frozen human proposals, partial fills, fees/funding, position closes, wind-down, delegated limits, both loss triggers, replacement limits, stale proposals and monitor recovery. Only Core identities and venue reads/fills are simulated; this does not verify a real login, wallet signing or exchange settlement. The script removes its own fixture states and writes `output/deployment/functional-acceptance.json` with every scenario and tool response.
 
 MIT. The open repository is created from a clean history and contains no private Ride repository history, credentials, or user account data.

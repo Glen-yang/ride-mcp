@@ -86,12 +86,18 @@ export function applyFill(p: Portfolio, fill: Fill): void {
       "UNOWNED_FILL",
       "Exchange fill has no owned execution.",
     );
-  const entries = Object.entries(e.allocations),
+  const entries = Object.entries(e.allocations).filter(
+      ([, q]) => !D(q).isZero(),
+    ),
     total = entries.reduce((n, [, q]) => n.plus(q), D(0));
   const q = D(fill.quantity);
   if (
     total.isZero() ||
+    q.isZero() ||
     q.isPositive() !== total.isPositive() ||
+    entries.some(
+      ([, allocation]) => D(allocation).isPositive() !== q.isPositive(),
+    ) ||
     q.abs().gt(total.abs())
   )
     throw new AgentError(
@@ -100,10 +106,30 @@ export function applyFill(p: Portfolio, fill: Fill): void {
     );
   let remaining = q,
     feeRemaining = D(fill.fee_usdc);
+  // Keep virtual ownership on the venue's quantity grid. A repeating decimal
+  // share otherwise leaves the owned sum unequal to an exact exchange position.
+  const decimals = Math.max(
+    p.snapshot?.quantity_decimals?.[fill.key] ?? 8,
+    q.decimalPlaces(),
+    ...entries.map(([, allocation]) => D(allocation).decimalPlaces()),
+  );
   for (let i = 0; i < entries.length; i++) {
     const [sid, remainingQ] = entries[i],
       last = i === entries.length - 1;
-    const part = last ? remaining : q.times(D(remainingQ).div(total));
+    const laterCapacity = entries
+      .slice(i + 1)
+      .reduce((n, [, allocation]) => n.plus(D(allocation).abs()), D(0));
+    const proportional = q
+      .abs()
+      .times(D(remainingQ).abs())
+      .div(total.abs())
+      .toDecimalPlaces(decimals, 1);
+    const minimum = D.max(0, remaining.abs().minus(laterCapacity));
+    const part = last
+      ? remaining
+      : D.min(D(remainingQ).abs(), D.max(proportional, minimum)).times(
+          q.isPositive() ? 1 : -1,
+        );
     const fee = last ? feeRemaining : D(fill.fee_usdc).times(part.div(q));
     const l = lot(p, sid, fill.key);
     trade(l, part.toString(), fill.price);

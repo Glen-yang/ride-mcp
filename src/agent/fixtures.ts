@@ -25,7 +25,7 @@ export function candidate(i: number): Candidate {
     direction: i < 3 ? "long" : "short",
     median_hold_hours: 48,
     source_roi_pct: 12,
-    source_drawdown_pct: 8,
+    source_drawdown_pct: 2,
     atr_pct: 2,
     venue_max_leverage: 8,
     min_notional_usdc: "10",

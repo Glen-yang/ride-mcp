@@ -108,6 +108,31 @@ describe("financial invariants", () => {
     );
     assert.throws(() => risk(p, snapshot().prices), /60%/);
   });
+  it("caps suggested leverage by historical drawdown and excludes unverifiable risk", () => {
+    const pool = [1, 2, 3, 4].map(candidate);
+    pool[0].source_drawdown_pct = 6;
+    const risky = { ...candidate(5), score: 100, source_drawdown_pct: 25 };
+    const unknown = { ...candidate(6), score: 100, source_drawdown_pct: null };
+    const plan = recommend(pref, [...pool, risky, unknown]);
+    assert.ok(
+      plan.allocations.some(
+        (a) => a.trader.id === pool[0].id && a.leverage_cap === 3,
+      ),
+    );
+    assert.ok(
+      plan.allocations.every(
+        (a) =>
+          a.trader.source_drawdown_pct! * a.leverage_cap <=
+          pref.loss_trigger_pct,
+      ),
+    );
+    assert.ok(
+      plan.allocations.every(
+        (a) => a.trader.id !== risky.id && a.trader.id !== unknown.id,
+      ),
+    );
+    assert.throws(() => recommend({ ...pref, loss_trigger_pct: 1 }, pool));
+  });
   it("does not net distinct prediction outcome tokens", () => {
     const p = fromPlan(recommend(pref, [1, 2, 3, 4].map(candidate)));
     p.sleeves.slice(0, 2).forEach((s, i) => {
@@ -211,6 +236,107 @@ describe("financial invariants", () => {
     p.initial_equity = "490";
     p.reconciliation = "complete";
     assert.equal(pnl(p).net_usdc, null);
+  });
+  it("preserves every micro-USDC when fractional sleeve fees and funding are displayed", () => {
+    const p = fromPlan(recommend(pref, [1, 2, 3, 4].map(candidate)));
+    let fee = D(".1"),
+      funding = D("-.2");
+    p.sleeves.slice(0, 3).forEach((s, i) => {
+      const feeShare = i === 2 ? fee : D(".1").div(3);
+      const fundingShare = i === 2 ? funding : D("-.2").div(3);
+      fee = fee.minus(feeShare);
+      funding = funding.minus(fundingShare);
+      s.lots["perps:BTC"] = {
+        key: "perps:BTC",
+        asset: "BTC",
+        market: "perps",
+        quantity: "0",
+        cost: "0",
+        realized: "0",
+        fees: feeShare.toString(),
+        funding: fundingShare.toString(),
+      };
+    });
+    p.snapshot = { ...snapshot(), account_value_usdc: "499.7" };
+    p.initial_equity = "500";
+    p.reconciliation = "complete";
+    const profit = pnl(p);
+    assert.equal(profit.net_usdc, "-0.300000");
+    assert.equal(
+      profit.sleeves.reduce((n, s) => n.plus(s.net_usdc!), D(0)).toFixed(6),
+      profit.net_usdc,
+    );
+    assert.ok(profit.sleeves.every((s) => s.net_usdc !== "-0.000000"));
+    assert.equal(profit.sleeves[3].net_usdc, "0.000000");
+  });
+  it("conserves exact exchange quantities across non-divisible partial fills without over-allocating an owner", () => {
+    for (const [quantities, fills, decimals] of [
+      [["-0.1", "-0.2", "-0.3"], ["-0.1", "-0.5"], 8],
+      [["0.02", "0.02", "0.01"], ["0.04", "0.01"], 2],
+    ] as const) {
+      const p = fromPlan(recommend(pref, [1, 2, 3, 4].map(candidate)));
+      const key = "perps:BTC";
+      const owners = p.sleeves.slice(0, 3);
+      owners.forEach((s, i) => {
+        s.intents[key] = {
+          key,
+          asset: "BTC",
+          market: "perps",
+          quantity: quantities[i],
+          price: "100",
+          source_entry_price: "100",
+          source_leverage: 5,
+          source_revision: "v1",
+          observed_at: now(),
+        };
+      });
+      const e = {
+        id: uid("execution"),
+        key,
+        target_quantity: quantities
+          .reduce((n, q) => n.plus(q), D(0))
+          .toString(),
+        allocations: Object.fromEntries(
+          owners.map((s, i) => [s.copy_id, quantities[i]]),
+        ),
+        status: "submitted" as const,
+        revision: 0,
+        fingerprint: "f",
+        created_at: now(),
+        expires_at: now() + 1000,
+        task_id: "partial_task",
+        observed_quantity: null,
+        reserve_usdc: "1",
+        error: null,
+      };
+      p.executions.push(e);
+      p.snapshot = { ...snapshot(), quantity_decimals: { [key]: decimals } };
+      let observed = D(0);
+      fills.forEach((q, i) => {
+        applyFill(p, {
+          id: "partial_" + i,
+          order_id: "order",
+          task_id: e.task_id,
+          key,
+          quantity: q,
+          price: "100",
+          fee_usdc: ".01",
+          at: now(),
+        });
+        observed = observed.plus(q);
+        p.snapshot!.positions[key] = observed.toString();
+        assert.equal(reconcileQuantities(p), true);
+        owners.forEach((s, j) => {
+          assert.ok(D(s.lots[key].quantity).abs().lte(D(quantities[j]).abs()));
+          assert.ok(D(s.lots[key].quantity).decimalPlaces() <= decimals);
+        });
+      });
+      assert.ok(Object.values(e.allocations).every((q) => D(q).isZero()));
+      assert.equal(
+        owners.reduce((n, s) => n.plus(s.lots[key].fees), D(0)).toFixed(6),
+        "0.020000",
+      );
+    }
   });
 });
 describe("approval and ownership", () => {

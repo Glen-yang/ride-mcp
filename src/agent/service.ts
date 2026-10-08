@@ -67,14 +67,20 @@ export class AgentService {
         const plan = recommend(pref, pool);
         s.plans = s.plans.filter((x) => x.expires_at > now());
         s.plans.push(plan);
-        return result({
-          plan,
-          portfolio_historical_drawdown_pct: null,
-          reasons: plan.allocations.map((x) => ({
-            trader_id: x.trader.id,
-            reason: `Fresh ${x.trader.score_version} score; ${x.trader.style}; ${x.trader.direction}; budget-adjusted allocation.`,
-          })),
-        });
+        return result(
+          {
+            plan,
+            portfolio_historical_drawdown_pct: null,
+            reasons: plan.allocations.map((x) => ({
+              trader_id: x.trader.id,
+              reason: `Copy Score ${x.trader.score}; source drawdown ${x.trader.source_drawdown_pct}%; ${x.trader.assets.join("/")}; ${x.trader.style}; ${x.trader.direction}; allocation ${x.amount_usdc} USDC, leverage cap ${x.leverage_cap}x.`,
+            })),
+          },
+          "ok",
+          [
+            "Historical rankings under your preferences are not investment advice; past performance does not guarantee future results.",
+          ],
+        );
       });
     }
     return this.repository.transact(user, async (s) => {
@@ -593,8 +599,12 @@ export class AgentService {
             "Sleeve allocations exceed the approved budget.",
           );
         for (const x of Object.values(s.intents))
-          x.quantity = D(x.quantity).times(ratio).toString();
+          x.quantity = D(x.quantity)
+            .times(ratio)
+            .toDecimalPlaces(p.snapshot?.quantity_decimals?.[x.key] ?? 8)
+            .toString();
         s.amount_usdc = cash(next);
+        s.source_revision = null;
       }
       if (args.leverage_cap !== undefined) {
         if (s.trader.market === "prediction" && args.leverage_cap !== 1)
@@ -603,6 +613,18 @@ export class AgentService {
             "Prediction positions require leverage 1.",
           );
         s.leverage_cap = args.leverage_cap as number;
+        for (const x of Object.values(s.intents)) {
+          const leverage = Math.min(s.leverage_cap, x.source_leverage);
+          x.quantity = D(x.quantity)
+            .times(leverage)
+            .div(x.source_leverage)
+            .toDecimalPlaces(p.snapshot?.quantity_decimals?.[x.key] ?? 8)
+            .toString();
+          x.source_leverage = leverage;
+        }
+        // Re-evaluate this source even if it has not traded since the user
+        // changed the allocation or cap. Parameters must affect actual targets.
+        s.source_revision = null;
       }
       if (args.stop_loss_pct !== undefined)
         s.stop_loss_pct = args.stop_loss_pct as number;

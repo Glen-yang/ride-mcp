@@ -1,6 +1,6 @@
 # CLI equivalence
 
-Default output is JSON. Add `--pretty` for human-readable cards/tables. The CLI bin is `ride`; use `npx -y github:Glen-yang/ride-mcp#v0.2.0` before each command until installed globally.
+Default output is JSON. Add `--pretty` for human-readable cards/tables. The CLI bin is `ride`; use `npx -y github:Glen-yang/ride-mcp#v0.2.1` before each command until installed globally.
 
 | MCP tool | CLI |
 |---|---|

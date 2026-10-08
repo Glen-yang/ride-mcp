@@ -135,7 +135,7 @@ async function main(): Promise<void> {
     }),
   );
   app.post("/mcp", auth, async (req, res) => {
-    const server = new McpServer({ name: "ride", version: "0.2.0" });
+    const server = new McpServer({ name: "ride", version: "0.2.1" });
     registerAgentTools(
       server,
       async (name, args, extra) => {

@@ -48,8 +48,8 @@ export async function setup(
   const args = [
     "-y",
     distribution === "npm"
-      ? "@glen-yang/ride-cli@0.2.0"
-      : "github:Glen-yang/ride-mcp#v0.2.0",
+      ? "@glen-yang/ride-cli@0.2.1"
+      : "github:Glen-yang/ride-mcp#v0.2.1",
     "mcp",
     "--server",
     server,
