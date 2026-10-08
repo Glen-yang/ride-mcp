@@ -9,7 +9,7 @@ Ride Agent V3 selects a diversified trader basket and manages owned Perps and pr
 Node.js 20+ and npm are required. Install the MCP configuration and Skill together:
 
 ```sh
-npx -y github:Glen-yang/ride-mcp#v0.2.1 setup --client codex
+npx -y github:Glen-yang/ride-mcp#v0.2.2 setup --client codex
 ```
 
 Use `--client claude-code` or `--client cursor` for those clients. `--server https://YOUR-RIDE-HOST/mcp` selects an enabled V3 deployment. Setup merges existing configuration, preserves other servers and refuses to overwrite a foreign `ride` entry. Restart your client after setup. MCP invokes the same pinned GitHub version.
@@ -20,7 +20,7 @@ For the Skill alone:
 npx skills add Glen-yang/ride-mcp --skill ride
 ```
 
-The Skill-only command does not register an MCP server. For standalone CLI commands, prefix the commands below with `npx -y github:Glen-yang/ride-mcp#v0.2.1`, or install the pinned repository with `npm install -g github:Glen-yang/ride-mcp#v0.2.1` to obtain `ride`.
+The Skill-only command does not register an MCP server. For standalone CLI commands, prefix the commands below with `npx -y github:Glen-yang/ride-mcp#v0.2.2`, or install the pinned repository with `npm install -g github:Glen-yang/ride-mcp#v0.2.2` to obtain `ride`.
 
 ## Use
 

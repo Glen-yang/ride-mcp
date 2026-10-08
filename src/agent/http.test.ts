@@ -11,6 +11,79 @@ import { mountHumanConfirmation } from "./human.js";
 import express from "express";
 import { once } from "node:events";
 
+it("production read-only gateway retains CLI queries and rejects writes at both HTTP layers", async () => {
+  const service = new AgentService(
+    new MemoryRepository(),
+    new FakeAdapter(),
+    "https://example.test",
+    new Cursor("x".repeat(32)),
+  );
+  const backend = backendApp(
+    service,
+    async () => "alice",
+    "127.0.0.1",
+    true,
+  ).listen(0, "127.0.0.1");
+  await once(backend, "listening");
+  const b = backend.address();
+  assert(b && typeof b !== "string");
+  const app = express();
+  app.use(express.json());
+  mountAgentProxy(
+    app,
+    (req, _res, next) => {
+      req.auth = {
+        token: "opaque",
+        clientId: "test",
+        scopes: ["ride:read", "ride:trade"],
+        extra: { rideAuthToken: "core-alice" },
+      };
+      next();
+    },
+    `http://127.0.0.1:${b.port}`,
+    true,
+  );
+  const gateway = app.listen(0, "127.0.0.1");
+  await once(gateway, "listening");
+  const g = gateway.address();
+  assert(g && typeof g !== "string");
+  const post = (port: number, path: string) =>
+    fetch(`http://127.0.0.1:${port}${path}`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: "Bearer core-alice",
+      },
+      body: "{}",
+    });
+  try {
+    for (const port of [g.port, b.port]) {
+      assert.equal((await post(port, "/agent/v1/get_portfolio")).status, 200);
+      for (const operation of [
+        "set_preferences",
+        "start_copy",
+        "update_copy",
+        "stop_copy",
+        "close_position",
+        "proposal",
+      ]) {
+        const result = await post(port, `/agent/v1/${operation}`);
+        assert.equal(result.status, 403, operation);
+        assert.equal((await result.json()).error.code, "READ_ONLY");
+      }
+    }
+    for (const operation of ["confirm", "authorize", "revoke", "reject"]) {
+      assert.equal(
+        (await post(b.port, `/agent/human/${operation}`)).status,
+        403,
+      );
+    }
+  } finally {
+    gateway.close();
+    backend.close();
+  }
+});
+
 it("public machine proxy has no approval or grant operation", async () => {
   const app = express();
   app.use(express.json());
@@ -136,14 +209,17 @@ it("public human gateway accepts native Core JWTs while preserving browser CSRF 
       ["ride_at_machine", 401],
       [null, 403],
     ] as const) {
-      const r: Response = await fetch(`http://127.0.0.1:${g.port}/agent/human/revoke`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      const r: Response = await fetch(
+        `http://127.0.0.1:${g.port}/agent/human/revoke`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+          body: "{}",
         },
-        body: "{}",
-      });
+      );
       assert.equal(r.status, status);
     }
   } finally {

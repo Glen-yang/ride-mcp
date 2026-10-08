@@ -12,6 +12,8 @@ import {
   inputs,
   publicResult,
   TOOL_NAMES,
+  mutationTools,
+  type ToolName,
   id,
   positiveMoney,
 } from "./contracts.js";
@@ -60,10 +62,16 @@ export function backendApp(
   service: AgentService,
   identity: (token: string) => Promise<string>,
   host = "127.0.0.1",
+  readOnly = false,
 ) {
   const app = createRideHttpApp(host);
   app.get("/health", (_req, res) =>
-    res.json({ service: "ride-agent", version: "3", status: "ready" }),
+    res.json({
+      service: "ride-agent",
+      version: "3",
+      status: "ready",
+      read_only: readOnly,
+    }),
   );
   app.use(async (req, res, next) => {
     try {
@@ -84,6 +92,18 @@ export function backendApp(
   app.post("/agent/v1/:operation", async (req, res) => {
     try {
       const name = req.params.operation;
+      if (
+        readOnly &&
+        (mutationTools.has(name as ToolName) ||
+          name === "set_preferences" ||
+          name === "proposal")
+      )
+        throw new AgentError(
+          "READ_ONLY",
+          "Trading is not enabled on this deployment.",
+          false,
+          403,
+        );
       if (name === "proposal") {
         const arg = z.object({ proposal_id: id }).strict().parse(req.body);
         res.json(
@@ -113,6 +133,13 @@ export function backendApp(
   app.post("/agent/human/:operation", async (req, res) => {
     try {
       const user = res.locals.user;
+      if (readOnly && !["updates", "portfolio"].includes(req.params.operation))
+        throw new AgentError(
+          "READ_ONLY",
+          "Trading is not enabled on this deployment.",
+          false,
+          403,
+        );
       let value;
       switch (req.params.operation) {
         case "proposal": {
@@ -213,6 +240,7 @@ export async function startBackend(): Promise<void> {
     service,
     (token) => validateCoreIdentity(token, required("RIDE_GRAPHQL_URL")),
     process.env.HOST ?? "127.0.0.1",
+    process.env.RIDE_AGENT_READ_ONLY === "true",
   );
   const controller = new AbortController(),
     runner = new AgentRunner(service);
@@ -228,6 +256,14 @@ export async function startBackend(): Promise<void> {
     controller.abort();
     listener.close();
   });
-  await runner.run(controller.signal);
+  if (process.env.RIDE_AGENT_READ_ONLY === "true") {
+    await new Promise<void>((resolve) => {
+      controller.signal.addEventListener("abort", () => resolve(), {
+        once: true,
+      });
+    });
+  } else {
+    await runner.run(controller.signal);
+  }
   await repository.close();
 }

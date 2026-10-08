@@ -14,6 +14,7 @@ export function mountAgentProxy(
   app: Express,
   auth: RequestHandler,
   backend: string,
+  readOnly = false,
 ): void {
   app.post("/agent/v1/:operation", auth, async (req, res) => {
     try {
@@ -23,6 +24,18 @@ export function mountAgentProxy(
         (!TOOL_NAMES.includes(name as ToolName) && name !== "proposal")
       )
         throw new AgentError("NOT_FOUND", "Unknown operation.", false, 404);
+      if (
+        readOnly &&
+        (mutationTools.has(name as ToolName) ||
+          name === "set_preferences" ||
+          name === "proposal")
+      )
+        throw new AgentError(
+          "READ_ONLY",
+          "Trading is not enabled on this deployment.",
+          false,
+          403,
+        );
       const scope = mutationTools.has(name as ToolName)
         ? "ride:trade"
         : "ride:read";

@@ -117,8 +117,8 @@ async function main(): Promise<void> {
     }),
   );
   app.use(createRideOAuthApprovalRouter(provider));
+  mountAgentProxy(app, auth, backend, readOnly);
   if (!readOnly) {
-    mountAgentProxy(app, auth, backend);
     mountHumanConfirmation(app, {
       backend,
       base: base.href,
@@ -135,7 +135,7 @@ async function main(): Promise<void> {
     }),
   );
   app.post("/mcp", auth, async (req, res) => {
-    const server = new McpServer({ name: "ride", version: "0.2.1" });
+    const server = new McpServer({ name: "ride", version: "0.2.2" });
     registerAgentTools(
       server,
       async (name, args, extra) => {

@@ -11,6 +11,7 @@ The client installation is independent of server activation. Three Node services
 - `RIDE_AGENT_BACKEND_URL`: private control service URL.
 - `RIDE_AGENT_HUMAN_COOKIE_KEY`: at least 32-byte independent cookie encryption secret.
 - `RIDE_PUBLIC_SUBMISSION_MODE=true`: five read tools, no machine write or browser confirmation routes.
+  Read-only CLI query routes remain available. Trading requests return `READ_ONLY`.
 
 The native App sends its existing Core JWT directly to `/agent/human/*`. OAuth machine tokens cannot confirm, authorize or revoke. The browser human surface signs in through Privy and uses encrypted, HttpOnly, SameSite cookies plus origin checks.
 
@@ -23,6 +24,7 @@ The native App sends its existing Core JWT directly to `/agent/human/*`. OAuth m
 - `RIDE_AGENT_PRIVATE_HTTP_HOST`: optional exact bridge hostname ending in `.railway.internal` when using Railway's encrypted private network over HTTP. Public executor connections require HTTPS.
 - `PUBLIC_BASE_URL`: matching Ride human review base.
 - `RIDE_AGENT_ENABLED=true`: explicit service activation.
+- `RIDE_AGENT_READ_ONLY=true`: reject backend machine writes and human confirmation/grant operations; suspend the background trading monitor. Pair with the gateway read-only flag for initial production rollout.
 
 State and ledger records persist in PostgreSQL; each user transition locks its row and rolls back failed confirmation. The monitor starts with the service and polls independently of MCP clients. Keep a single monitor instance per Agent database until cross-process scheduling leases are added; user transactions serialize changes, but overlapping network observations should be avoided operationally.
 
@@ -40,6 +42,8 @@ State and ledger records persist in PostgreSQL; each user transition locks its r
 Core requires `RIDE_AGENT_CORE_ENABLED=true`, the same Core S2S token, and explicit `RIDE_AGENT_PREDICTION_ENABLED=true` for prediction execution. Set `RIDE_AGENT_NETWORK` consistently in Core and bridge; mainnet also requires Core `RIDE_AGENT_MAINNET_ENABLED=true`. The API and gRPC execution gateway must share their existing `STRATEGY_CONTROL_PLANE_SERVICE_TOKEN`; this is separate from the Node-to-Core token. Existing mainnet execution epoch controls continue to apply. Signing remains in existing workers. Apply all three additive migrations from the private implementation: execution mode/quantity, prediction ownership, and archived account reuse. Legacy mode retains its original policy caps.
 
 Perps account preparation and prediction wallet funding occur through Ride. A combined portfolio checks each market's funds independently and performs no implicit bridge/transfer. Core ownership blocks conflicting legacy writers while Agent owns the account. Release requires complete position and pending-order reconciliation.
+
+Initial production query deployments must also set `RIDE_AGENT_READ_ONLY=true` in Core, with mainnet and prediction execution disabled. The private Core read-only allowlist rejects account and order mutations even with a valid service token.
 
 ## Acceptance before activation
 
