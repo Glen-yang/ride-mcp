@@ -36,7 +36,7 @@ State and ledger records persist in PostgreSQL; each user transition locks its r
 - `RIDE_AGENT_PREDICTION_ENABLED=true` plus `RIDE_AGENT_POLYGON_RPC_URL`: explicit prediction activation on Polygon. Prediction has no paper-trading mode in this integration.
 - `FIREBASE_SERVICE_ACCOUNT_JSON`: server-side push credentials, never shipped to clients.
 
-Core requires `RIDE_AGENT_CORE_ENABLED=true`, the same Core S2S token, and explicit `RIDE_AGENT_PREDICTION_ENABLED=true` for prediction execution. Signing remains in existing workers. Apply all three additive migrations from the private implementation: execution mode/quantity, prediction ownership, and archived account reuse. Legacy mode retains its original policy caps.
+Core requires `RIDE_AGENT_CORE_ENABLED=true`, the same Core S2S token, and explicit `RIDE_AGENT_PREDICTION_ENABLED=true` for prediction execution. Set `RIDE_AGENT_NETWORK` consistently in Core and bridge; mainnet also requires Core `RIDE_AGENT_MAINNET_ENABLED=true`. The API and gRPC execution gateway must share their existing `STRATEGY_CONTROL_PLANE_SERVICE_TOKEN`; this is separate from the Node-to-Core token. Existing mainnet execution epoch controls continue to apply. Signing remains in existing workers. Apply all three additive migrations from the private implementation: execution mode/quantity, prediction ownership, and archived account reuse. Legacy mode retains its original policy caps.
 
 Perps account preparation and prediction wallet funding occur through Ride. A combined portfolio checks each market's funds independently and performs no implicit bridge/transfer. Core ownership blocks conflicting legacy writers while Agent owns the account. Release requires complete position and pending-order reconciliation.
 
