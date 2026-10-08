@@ -189,6 +189,7 @@ footer {
     font-size: 21px;
   }
 }
+[hidden] { display: none !important; }
 </style></head><body><main><header><div class="brand"><span>ride</span> / confirmation</div><span class="tag">Human approval</span></header><div id="login" class="card"><h1>Sign in to review your proposal</h1><p class="muted">Ride verifies your account before displaying or confirming changes.</p><label>Access code, if required<input id="access-code" autocomplete="off"></label><button id="sign-in">Continue with Google</button></div><div id="status" aria-live="polite"></div><div id="content"></div><div id="actions" class="actions" hidden><button id="approve">Confirm these parameters</button><button id="reject" class="secondary">Reject proposal</button></div></main><script type="module">/*INLINE_VIEW*/const el = (tag, text, cls) => {
   const node = document.createElement(tag);
   if (text !== undefined && text !== null) node.textContent = String(text);
