@@ -136,7 +136,7 @@ it("public human gateway accepts native Core JWTs while preserving browser CSRF 
       ["ride_at_machine", 401],
       [null, 403],
     ] as const) {
-      const r = await fetch(`http://127.0.0.1:${g.port}/agent/human/revoke`, {
+      const r: Response = await fetch(`http://127.0.0.1:${g.port}/agent/human/revoke`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
