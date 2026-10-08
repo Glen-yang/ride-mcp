@@ -1,0 +1,70 @@
+{
+  "name": "@glen-yang/ride-cli",
+  "version": "0.2.0",
+  "private": false,
+  "type": "module",
+  "scripts": {
+    "build": "node scripts-build-ui.mjs && tsc",
+    "start": "node dist/server.js",
+    "test": "tsx --test src/*.test.ts src/agent/*.test.ts src/cli/*.test.ts",
+    "prepare": "npm run build",
+    "prepack": "npm run build",
+    "start:backend": "node dist/backend.js",
+    "start:bridge": "node dist/bridge.js",
+    "check": "tsc --noEmit -p tsconfig.test.json",
+    "dev": "tsx src/server.ts",
+    "verify:package": "node scripts/verify-package.mjs"
+  },
+  "dependencies": {
+    "@iarna/toml": "^2.2.5",
+    "@modelcontextprotocol/sdk": "^1.32.1",
+    "decimal.js": "^10.6.0",
+    "dotenv": "^17.4.2",
+    "ethers": "^6.17.0",
+    "express": "^5.2.1",
+    "pg": "^8.23.1",
+    "redis": "^6.0.0",
+    "zod": "^4.1.13"
+  },
+  "overrides": {
+    "body-parser": "2.3.0",
+    "fast-uri": "4.2.1"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.6",
+    "@types/node": "^24.10.1",
+    "@types/pg": "^8.23.1",
+    "prettier": "^3.9.9",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.3"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "description": "Ride MCP V3, portfolio CLI and installable agent Skill",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Glen-yang/ride-mcp.git"
+  },
+  "homepage": "https://github.com/Glen-yang/ride-mcp#readme",
+  "bugs": {
+    "url": "https://github.com/Glen-yang/ride-mcp/issues"
+  },
+  "bin": {
+    "ride": "dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "public/agent.html",
+    "public/confirm.html",
+    "skills",
+    "README.md",
+    "LICENSE",
+    "docs",
+    ".env.example"
+  ],
+  "publishConfig": {
+    "access": "public"
+  }
+}
