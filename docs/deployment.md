@@ -20,6 +20,7 @@ The native App sends its existing Core JWT directly to `/agent/human/*`. OAuth m
 - `RIDE_AGENT_CURSOR_KEY`: at least 32 characters for user-bound update cursors.
 - `RIDE_GRAPHQL_URL`: authenticated Core identity validation.
 - `RIDE_AGENT_EXECUTOR_URL`, `RIDE_AGENT_EXECUTOR_TOKEN`: private bridge URL and service token.
+- `RIDE_AGENT_PRIVATE_HTTP_HOST`: optional exact bridge hostname ending in `.railway.internal` when using Railway's encrypted private network over HTTP. Public executor connections require HTTPS.
 - `PUBLIC_BASE_URL`: matching Ride human review base.
 - `RIDE_AGENT_ENABLED=true`: explicit service activation.
 

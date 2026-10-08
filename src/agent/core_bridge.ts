@@ -309,7 +309,12 @@ export class CoreBridge {
       components,
       scored_at: row.computed_at,
       expires_at: row.expires_at,
-      eligibility: row.eligibility === "PASS" ? "PASS" : "REJECT",
+      eligibility:
+        row.eligibility === "PASS" &&
+        row.score_version === "strict_perp_v2_5_daily_live_v1" &&
+        Object.values(components).every((v) => v !== null && Number.isFinite(v))
+          ? "PASS"
+          : "REJECT",
       assets: assets.length ? assets : ["BTC", "ETH"],
       style: row.tags?.[0] ?? "unclassified",
       direction:

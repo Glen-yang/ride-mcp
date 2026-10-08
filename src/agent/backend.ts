@@ -204,6 +204,7 @@ export async function startBackend(): Promise<void> {
     new BridgeAdapter(
       required("RIDE_AGENT_EXECUTOR_URL"),
       required("RIDE_AGENT_EXECUTOR_TOKEN"),
+      process.env.RIDE_AGENT_PRIVATE_HTTP_HOST,
     ),
     required("PUBLIC_BASE_URL"),
     new Cursor(required("RIDE_AGENT_CURSOR_KEY")),

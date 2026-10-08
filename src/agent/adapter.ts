@@ -58,13 +58,21 @@ export class BridgeAdapter implements VenueAdapter {
   constructor(
     private url: string,
     private token: string,
+    privateHttpHost?: string,
   ) {
     const u = new URL(url);
+    const privateHttp =
+      u.protocol === "http:" &&
+      u.hostname === privateHttpHost &&
+      /^[a-z0-9-]+\.railway\.internal$/.test(u.hostname);
     if (
       u.protocol !== "https:" &&
-      !["127.0.0.1", "localhost"].includes(u.hostname)
+      !["127.0.0.1", "localhost"].includes(u.hostname) &&
+      !privateHttp
     )
-      throw new Error("Executor must use HTTPS or loopback");
+      throw new Error("Executor must use HTTPS, loopback or an explicitly configured private host");
+    if (u.username || u.password)
+      throw new Error("Executor URL must not contain credentials");
     if (!token) throw new Error("Missing executor service token");
   }
   private async call<T>(operation: string, input: unknown): Promise<T> {

@@ -6,6 +6,7 @@ import { AgentService } from "./service.js";
 import { Cursor, MemoryRepository } from "./repository.js";
 import { FakeAdapter } from "./fixtures.js";
 import { AgentError } from "./contracts.js";
+import { BridgeAdapter } from "./adapter.js";
 import express from "express";
 import { once } from "node:events";
 
@@ -72,5 +73,14 @@ it("native human route validates Core identity and cannot accept MCP tokens", as
     }
   } finally {
     listener.close();
+  }
+});
+
+it("private HTTP execution requires an exact explicitly configured Railway host", () => {
+  const url = "http://agent-bridge.railway.internal:3355";
+  assert.throws(() => new BridgeAdapter(url, "secret"));
+  assert.doesNotThrow(() => new BridgeAdapter(url, "secret", "agent-bridge.railway.internal"));
+  for (const rejected of ["http://other.railway.internal:3355", "http://agent-bridge.railway.internal.evil.test", "http://user:secret@agent-bridge.railway.internal:3355"]) {
+    assert.throws(() => new BridgeAdapter(rejected, "secret", "agent-bridge.railway.internal"));
   }
 });

@@ -189,3 +189,4 @@ footer {
     font-size: 21px;
   }
 }
+[hidden] { display: none !important; }
