@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "build": "node scripts-build-ui.mjs && tsc",
-    "start": "node dist/server.js",
+    "start": "node dist/start.js",
     "test": "tsx --test src/*.test.ts src/agent/*.test.ts src/cli/*.test.ts",
     "prepare": "npm run build",
     "prepack": "npm run build",
