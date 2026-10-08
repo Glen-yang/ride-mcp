@@ -70,7 +70,9 @@ export class BridgeAdapter implements VenueAdapter {
       !["127.0.0.1", "localhost"].includes(u.hostname) &&
       !privateHttp
     )
-      throw new Error("Executor must use HTTPS, loopback or an explicitly configured private host");
+      throw new Error(
+        "Executor must use HTTPS, loopback or an explicitly configured private host",
+      );
     if (u.username || u.password)
       throw new Error("Executor URL must not contain credentials");
     if (!token) throw new Error("Missing executor service token");

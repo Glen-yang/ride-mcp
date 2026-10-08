@@ -137,33 +137,54 @@ export function mountHumanConfirmation(
   ]);
   app.post("/agent/human/:operation", async (req, res) => {
     try {
-      if (req.get("origin") !== origin || !allowed.has(req.params.operation))
+      if (!allowed.has(req.params.operation))
         throw new AgentError(
-          "ORIGIN_REQUIRED",
-          "Ride browser origin is required.",
+          "NOT_FOUND",
+          "Unknown human operation.",
           false,
-          403,
+          404,
         );
-      const cookies = Object.fromEntries(
-        (req.headers.cookie ?? "").split(";").map((x) => x.trim().split("=")),
-      );
-      const session = unseal(cookies.ride_agent_human ?? ""),
-        given = Buffer.from(req.get("x-ride-csrf") ?? ""),
-        expected = Buffer.from(session.csrf);
-      if (given.length !== expected.length || !timingSafeEqual(given, expected))
-        throw new AgentError(
-          "CSRF_REQUIRED",
-          "Refresh the Ride sign-in session.",
-          false,
-          403,
+      let token: string;
+      const authorization = req.get("authorization");
+      if (authorization) {
+        // Native Ride sends its Core JWT. The backend validates it against
+        // authenticated Core identity; MCP's opaque OAuth tokens fail there.
+        if (!authorization.startsWith("Bearer ") || !authorization.slice(7))
+          throw new AgentError("AUTH_REQUIRED", "Sign in to Ride.", false, 401);
+        token = authorization.slice(7);
+      } else {
+        if (req.get("origin") !== origin)
+          throw new AgentError(
+            "ORIGIN_REQUIRED",
+            "Ride browser origin is required.",
+            false,
+            403,
+          );
+        const cookies = Object.fromEntries(
+          (req.headers.cookie ?? "").split(";").map((x) => x.trim().split("=")),
         );
+        const session = unseal(cookies.ride_agent_human ?? ""),
+          given = Buffer.from(req.get("x-ride-csrf") ?? ""),
+          expected = Buffer.from(session.csrf);
+        if (
+          given.length !== expected.length ||
+          !timingSafeEqual(given, expected)
+        )
+          throw new AgentError(
+            "CSRF_REQUIRED",
+            "Refresh the Ride sign-in session.",
+            false,
+            403,
+          );
+        token = session.token;
+      }
       const response = await fetch(
         new URL(`/agent/human/${req.params.operation}`, options.backend),
         {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            Authorization: `Bearer ${session.token}`,
+            Authorization: `Bearer ${token}`,
           },
           body: JSON.stringify(req.body),
           signal: AbortSignal.timeout(25000),
