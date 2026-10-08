@@ -1053,6 +1053,9 @@ export async function startCoreBridge() {
     throw Error("Executor token must contain 32 characters");
   const app = express();
   app.disable("x-powered-by");
+  app.get("/health", (_req, res) =>
+    res.json({ service: "ride-agent-bridge", version: "3" }),
+  );
   app.use(express.json({ limit: "1mb" }));
   app.post("/internal/agent/:operation", async (req, res) => {
     const actual = Buffer.from(
