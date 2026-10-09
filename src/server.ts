@@ -21,6 +21,7 @@ import { mountAgentProxy } from "./agent/http.js";
 import { mountHumanConfirmation } from "./agent/human.js";
 import { validateCoreIdentity } from "./agent/backend.js";
 import { AgentError, mutationTools } from "./agent/contracts.js";
+import { VERSION } from "./version.js";
 
 async function main(): Promise<void> {
   const required = (key: string) => {
@@ -135,7 +136,7 @@ async function main(): Promise<void> {
     }),
   );
   app.post("/mcp", auth, async (req, res) => {
-    const server = new McpServer({ name: "ride", version: "0.2.2" });
+    const server = new McpServer({ name: "ride", version: VERSION });
     registerAgentTools(
       server,
       async (name, args, extra) => {

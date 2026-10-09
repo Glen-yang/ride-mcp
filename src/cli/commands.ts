@@ -16,9 +16,11 @@ import {
   openBrowser,
   serverUrl,
 } from "./session.js";
-import { setup, type ClientName } from "./setup.js";
+import { type ClientName } from "./setup.js";
+import { onboard } from "./onboarding.js";
+import { VERSION } from "../version.js";
 
-export const HELP = `Ride CLI\n  setup --client codex|claude-code|cursor --server https://YOUR-RIDE-HOST/mcp\n  login --server https://YOUR-RIDE-HOST/mcp [--trade]\n  preferences --json '{"budget_usdc":"500","loss_trigger_pct":20,"market":"perps"}'\n  recommend | trader TRADER_ID | portfolio [PORTFOLIO_ID] | review [PORTFOLIO_ID]\n  copy start PLAN_ID | copy update COPY_ID --json '{"leverage_cap":5}'\n  copy stop COPY_ID [--mode wind_down|close_now]\n  updates [--cursor CURSOR] [--limit 20] | position close POSITION_ID\n  proposal PROPOSAL_ID | confirm PROPOSAL_ID\n  mcp [--server URL]\nJSON output is default. --pretty renders a human-readable view. Confirmation opens Ride.\n`;
+export const HELP = `Ride CLI\n  setup --client codex|claude-code|cursor [--trade] [--skip-login] [--server URL]\n  login --server https://YOUR-RIDE-HOST/mcp [--trade]\n  preferences --json '{"budget_usdc":"500","loss_trigger_pct":20,"market":"perps"}'\n  recommend | trader TRADER_ID | portfolio [PORTFOLIO_ID] | review [PORTFOLIO_ID]\n  copy start PLAN_ID | copy update COPY_ID --json '{"leverage_cap":5}'\n  copy stop COPY_ID [--mode wind_down|close_now]\n  updates [--cursor CURSOR] [--limit 20] | position close POSITION_ID\n  proposal PROPOSAL_ID | confirm PROPOSAL_ID\n  mcp [--server URL]\nSetup installs Skill + MCP and starts browser login (default server: https://mcp.onride.me/mcp).\nJSON output is default. --pretty renders a human-readable view. Confirmation opens Ride.\n`;
 export function parseCommand(argv: string[]): {
   command: string;
   name?: ToolName;
@@ -32,7 +34,8 @@ export function parseCommand(argv: string[]): {
     const x = argv[i];
     if (x.startsWith("--")) {
       const key = x.slice(2);
-      if (["pretty", "trade", "help"].includes(key)) flags[key] = true;
+      if (["pretty", "trade", "help", "skip-login"].includes(key))
+        flags[key] = true;
       else {
         const value = argv[++i];
         if (!value || value.startsWith("--"))
@@ -97,12 +100,11 @@ export async function runCli(argv: string[]): Promise<void> {
       flags.server ?? process.env.RIDE_MCP_URL ?? "https://mcp.onride.me/mcp";
     console.log(
       JSON.stringify(
-        await setup(
-          flags.client as ClientName,
-          server as string,
-          undefined,
-          flags.distribution === "npm" ? "npm" : "github",
-        ),
+        await onboard(flags.client as ClientName, server as string, {
+          trade: flags.trade === true,
+          skipLogin: flags["skip-login"] === true,
+          distribution: flags.distribution === "npm" ? "npm" : "github",
+        }),
       ),
     );
     return;
@@ -120,7 +122,7 @@ export async function runCli(argv: string[]): Promise<void> {
     return;
   }
   if (command === "mcp") {
-    const server = new McpServer({ name: "ride", version: "0.2.1" });
+    const server = new McpServer({ name: "ride", version: VERSION });
     registerAgentTools(server, async (tool, input) =>
       withSessionLock(async () => {
         const session = await loadSession();

@@ -47,6 +47,9 @@ try {
     assert(help.includes("Ride CLI"));
   }
   const root = join(temp, "node_modules/@glen-yang/ride-cli");
+  const { version } = JSON.parse(
+    await readFile(join(root, "package.json"), "utf8"),
+  );
   const { setup } = await import(
     pathToFileURL(join(root, "dist/cli/setup.js"))
   );
@@ -54,7 +57,13 @@ try {
     const home = join(temp, client);
     const result = await setup(client, "https://ride.test/mcp", home);
     const text = await readFile(result.config, "utf8");
-    assert(text.includes("github:Glen-yang/ride-mcp#v0.2.1"));
+    assert(
+      text.includes(
+        client === "codex"
+          ? 'url = "https://ride.test/mcp"'
+          : `github:Glen-yang/ride-mcp#v${version}`,
+      ),
+    );
     assert(
       (await readFile(join(result.skill, "SKILL.md"), "utf8")).includes(
         "name: ride",

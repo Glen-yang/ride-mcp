@@ -2,17 +2,21 @@
 
 Ride Agent V3 selects a diversified trader basket and manages owned Perps and prediction-market copies. It exposes ten MCP tools, equivalent JSON CLI commands, compact MCP App cards, and a portable agent Skill.
 
-**Release status:** this is the V3 implementation. The production V3 backend and native App must be deployed and configured before account or trading commands work. Installing the client does not activate real trading. The npm registry package is not published yet; use the pinned GitHub distribution below.
+**Release status:** the hosted V3 endpoint is `https://mcp.onride.me/mcp`. Account readiness and Ride approval govern trading. The npm registry package is not published yet; use the pinned GitHub distribution below.
 
 ## One-command installation
 
-Node.js 20+ and npm are required. Install the MCP configuration and Skill together:
+Node.js 20+, npm and your chosen AI client are required. Install the Skill, connect the production MCP and start login in one command:
 
 ```sh
-npx -y github:Glen-yang/ride-mcp#v0.2.2 setup --client codex
+npx -y github:Glen-yang/ride-mcp#v0.2.3 setup --client codex --trade
 ```
 
-Use `--client claude-code` or `--client cursor` for those clients. `--server https://YOUR-RIDE-HOST/mcp` selects an enabled V3 deployment. Setup merges existing configuration, preserves other servers and refuses to overwrite a foreign `ride` entry. Restart your client after setup. MCP invokes the same pinned GitHub version.
+Complete login and authorization with your own Ride account in the browser, then restart Codex or open a new chat. Codex uses native HTTP MCP and its own OAuth credential storage. If the Codex CLI is absent, setup runs the official `@openai/codex@0.162.0` CLI through npx automatically; no separate global CLI installation is needed.
+
+Use `--client claude-code` or `--client cursor` for those clients; their stdio MCP uses this pinned Ride CLI and its private OAuth session. Setup logs in automatically for all three clients. `--trade` requests read and proposal access; omit it for read access. Execution still requires Ride approval. `--server https://YOUR-RIDE-HOST/mcp` selects another V3 deployment. Add `--skip-login` for unattended configuration only.
+
+Setup preserves unrelated settings, upgrades unmodified v0.2.1/v0.2.2 installations and refuses to overwrite a foreign `ride` entry or customized Skill. If browser login is cancelled or fails, rerun the same command to retry; the installed configuration is retained. Restart your client after setup.
 
 For the Skill alone:
 
@@ -20,12 +24,12 @@ For the Skill alone:
 npx skills add Glen-yang/ride-mcp --skill ride
 ```
 
-The Skill-only command does not register an MCP server. For standalone CLI commands, prefix the commands below with `npx -y github:Glen-yang/ride-mcp#v0.2.2`, or install the pinned repository with `npm install -g github:Glen-yang/ride-mcp#v0.2.2` to obtain `ride`.
+The Skill-only command does not register an MCP server. For standalone CLI commands, prefix the commands below with `npx -y github:Glen-yang/ride-mcp#v0.2.3`, or install the pinned repository with `npm install -g github:Glen-yang/ride-mcp#v0.2.3` to obtain `ride`.
 
 ## Use
 
 ```sh
-ride login --server https://YOUR-RIDE-HOST/mcp --trade
+ride login --server https://mcp.onride.me/mcp --trade
 ride preferences --json '{"budget_usdc":"500","loss_trigger_pct":20,"market":"perps","assets":["BTC","ETH"]}'
 ride recommend --pretty
 ride copy start PLAN_ID
@@ -35,7 +39,7 @@ ride portfolio --pretty
 ride updates --limit 20
 ```
 
-`login` defaults to read access; `--trade` adds proposal access. OAuth uses a browser, PKCE and a loopback callback. Session data remains under `~/.ride` with directory 0700 and file 0600; client configuration contains no access token. JSON is the default CLI output. `confirm` opens the Ride human review page.
+Standalone `ride login` is separate from Codex native MCP login; Claude/Cursor setup already creates this CLI session. `login` defaults to read access; `--trade` adds proposal access. OAuth uses a browser, PKCE and a loopback callback. CLI session data remains under `~/.ride` with directory 0700 and file 0600; client configuration contains no access token. JSON is the default CLI output. `confirm` opens the Ride human review page.
 
 | MCP tool | CLI equivalent |
 | --- | --- |

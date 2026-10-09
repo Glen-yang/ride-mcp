@@ -5,7 +5,7 @@ description: Select a diversified Ride trader basket and manage owned copy-tradi
 
 # Ride
 
-Use the ten Ride V3 tools or their equivalent `ride` CLI commands. Read [the command reference](references/commands.md) when MCP is unavailable. `npx -y github:Glen-yang/ride-mcp#v0.2.3 setup --client codex --trade` installs this Skill, connects the production HTTP MCP and starts Codex OAuth login. The user completes browser authorization and restarts the client. Skill-only installation does not register MCP. Standalone CLI commands use a separate `ride login --trade` session; proposal access does not authorize execution.
+Use the ten Ride V3 tools or their equivalent `ride` CLI commands. Read [the command reference](references/commands.md) when MCP is unavailable. A Skill installation alone does not register MCP; `npx -y github:Glen-yang/ride-mcp#v0.2.1 setup --client codex` installs both. Authenticate with `ride login`; use `--trade` for proposal access.
 
 Before recommendations, fill only missing preferences: USDC budget, acceptable loss trigger percentage, and Perps/prediction/both with asset preferences. Default to BTC/ETH Perps when the user leaves the market open. Preserve supplied answers. Call `set_preferences`, then `recommend_traders`; explain source scores, diversification, allocations, leverage caps, data time and unavailable metrics from the returned plan. Use public trader IDs, never upstream wallet addresses.
 
