@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import "dotenv/config";
 import express from "express";
+import { VERSION } from "../version.js";
 import pg from "pg";
 import {
   createHash,
@@ -365,17 +366,22 @@ export class CoreBridge {
     type: string,
     address: string,
     start: number,
+    end = now(),
+    source = false,
   ): Promise<{ events: any[]; complete: boolean }> {
     let cursor = start;
     const result = new Map<string, any>();
     for (let page = 0; page < 10; page++) {
-      const rows = await this.info({
-        type,
-        user: address,
-        startTime: cursor,
-        endTime: now(),
-        aggregateByTime: false,
-      });
+      const rows = await this.info(
+        {
+          type,
+          user: address,
+          startTime: cursor,
+          endTime: end,
+          aggregateByTime: false,
+        },
+        source,
+      );
       if (!Array.isArray(rows))
         return { events: [...result.values()], complete: false };
       for (const row of rows)
@@ -938,7 +944,13 @@ export class CoreBridge {
     },
   ): Promise<void> {
     const tokens = await this.core("push_tokens", { user_id: user });
-    if (!tokens.length) return;
+    if (!tokens.length)
+      throw new AgentError(
+        "PUSH_NOT_REGISTERED",
+        "No Ride App device is registered for push delivery.",
+        true,
+        409,
+      );
     const service = JSON.parse(required("FIREBASE_SERVICE_ACCOUNT_JSON"));
     if (!this.tokens || this.tokens.expiry < now() + 60000) {
       const encode = (v: unknown) =>
@@ -1002,6 +1014,62 @@ export class CoreBridge {
         return this.profile(input.trader_id);
       case "source":
         return this.source(input.trader_id);
+      case "source_fills": {
+        if (
+          !Number.isSafeInteger(input.start_at) ||
+          !Number.isSafeInteger(input.end_at) ||
+          input.end_at <= input.start_at ||
+          input.end_at - input.start_at > 31 * 86400_000 ||
+          input.end_at > now()
+        )
+          throw new AgentError(
+            "INVALID_WINDOW",
+            "Invalid source history window.",
+            false,
+            400,
+          );
+        if (input.market !== "perps")
+          return {
+            fills: [],
+            complete: false,
+            reason:
+              "Authenticated prediction source fill history is unavailable.",
+          };
+        const row = await this.resolve(input.trader_id);
+        const history = await this.paged(
+          "userFillsByTime",
+          row.address,
+          input.start_at,
+          input.end_at,
+          true,
+        );
+        const valid = history.events.filter(
+          (f) => f.time >= input.start_at && f.time < input.end_at,
+        );
+        return {
+          complete: history.complete,
+          fills: valid.map((f) => ({
+            id: `source_${fingerprint([input.trader_id, f.tid, f.oid]).slice(0, 32)}`,
+            key: `perps:${f.coin}`,
+            quantity: D(f.sz)
+              .times(f.side === "B" ? 1 : -1)
+              .toString(),
+            price: String(f.px),
+            fee_usdc: f.feeToken === "USDC" ? String(f.fee) : null,
+            realized_usdc: f.closedPnl == null ? null : String(f.closedPnl),
+            at: f.time,
+          })),
+        };
+      }
+      case "notification_status": {
+        const tokens = await this.core("push_tokens", {
+          user_id: input.user_id,
+        });
+        return {
+          configured: !!process.env.FIREBASE_SERVICE_ACCOUNT_JSON,
+          device_registered: Array.isArray(tokens) && tokens.length > 0,
+        };
+      }
       case "preflight":
         return this.account(input.user_id, input.portfolio);
       case "bind":
@@ -1067,7 +1135,7 @@ export async function startCoreBridge() {
   const app = express();
   app.disable("x-powered-by");
   app.get("/health", (_req, res) =>
-    res.json({ service: "ride-agent-bridge", version: "3" }),
+    res.json({ service: "ride-agent-bridge", version: "3", release: VERSION }),
   );
   app.use(express.json({ limit: "1mb" }));
   app.post("/internal/agent/:operation", async (req, res) => {

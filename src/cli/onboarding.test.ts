@@ -23,6 +23,44 @@ const server = "https://mcp.onride.me/mcp";
 const legacy = fileURLToPath(
   new URL("./fixtures/legacy-skill/", import.meta.url),
 );
+it("upgrades the released v0.2.3 Skill and pinned stdio configuration without changing user settings", () =>
+  temporary(async (home) => {
+    await mkdir(join(home, ".cursor"));
+    await writeFile(
+      join(home, ".cursor/mcp.json"),
+      JSON.stringify({
+        mcpServers: {
+          other: { url: "https://other.test" },
+          ride: {
+            command: "npx",
+            args: [
+              "-y",
+              "github:Glen-yang/ride-mcp#v0.2.3",
+              "mcp",
+              "--server",
+              server,
+            ],
+          },
+        },
+      }),
+    );
+    await cp(
+      fileURLToPath(new URL("./fixtures/v023-skill/", import.meta.url)),
+      join(home, ".cursor/skills/ride"),
+      { recursive: true },
+    );
+    await setup("cursor", server, home);
+    const config = JSON.parse(
+      await readFile(join(home, ".cursor/mcp.json"), "utf8"),
+    );
+    assert.equal(config.mcpServers.ride.args[1], distributionPackage("github"));
+    assert.deepEqual(config.mcpServers.other, { url: "https://other.test" });
+    assert(
+      (
+        await readFile(join(home, ".cursor/skills/ride/SKILL.md"), "utf8")
+      ).includes("diagnose_copy"),
+    );
+  }));
 const packaged = fileURLToPath(new URL("../../skills/ride/", import.meta.url));
 async function temporary(work: (home: string) => Promise<void>) {
   const home = await mkdtemp(join(tmpdir(), "ride-onboarding-"));

@@ -6,6 +6,7 @@ import {
   failure,
   inputs,
   mutationTools,
+  stateTools,
   publicResult,
   output,
   TOOL_NAMES,
@@ -19,6 +20,13 @@ export function registerAgentTools(
   invoke: (name: ToolName, args: unknown, extra: any) => Promise<Result>,
   readOnly = false,
 ): void {
+  server.server.registerCapabilities({
+    extensions: {
+      "io.modelcontextprotocol/ui": {
+        mimeTypes: ["text/html;profile=mcp-app"],
+      },
+    },
+  });
   server.registerResource(
     "ride-agent-cards",
     RESOURCE_URI,
@@ -40,7 +48,11 @@ export function registerAgentTools(
     }),
   );
   for (const name of TOOL_NAMES) {
-    if (readOnly && (mutationTools.has(name) || name === "set_preferences"))
+    if (
+      readOnly &&
+      (mutationTools.has(name) ||
+        (stateTools.has(name) && name !== "recommend_traders"))
+    )
       continue;
     server.registerTool(
       name,
@@ -50,12 +62,9 @@ export function registerAgentTools(
         inputSchema: inputs[name],
         outputSchema: output,
         annotations: {
-          readOnlyHint: !mutationTools.has(name) && name !== "set_preferences",
+          readOnlyHint: !mutationTools.has(name) && !stateTools.has(name),
           destructiveHint: mutationTools.has(name),
-          idempotentHint:
-            name !== "set_preferences" &&
-            name !== "recommend_traders" &&
-            !mutationTools.has(name),
+          idempotentHint: !stateTools.has(name) && !mutationTools.has(name),
           openWorldHint: true,
         },
         _meta: {
@@ -115,6 +124,16 @@ function description(name: ToolName): string {
   const descriptions: Record<ToolName, string> = {
     set_preferences:
       "Save budget, loss trigger and market preferences. Existing portfolios are unchanged.",
+    recalculate_plan:
+      "Refresh a saved preview or validate edited trader allocations against fresh eligibility, budget and leverage limits. Returns a new frozen plan; no execution.",
+    get_performance:
+      "Read persisted accounting snapshots for daily, weekly or inception performance. Historical sleeves remain after replacement; incomplete periods return null profit.",
+    diagnose_copy:
+      "Read an owned copy's source fills, attributed follower receipts and event-time execution decisions for the same window (maximum 31 days). Missing evidence and counterfactual profit remain unavailable.",
+    get_notification_preferences:
+      "Read daily Ride App digest preferences and actual push registration readiness. Server monitoring is independent of this chat.",
+    set_notification_preferences:
+      "Save explicitly requested daily Ride App digest opt-in, local time and IANA timezone. Critical risk alerts remain enabled; this does not authorize trading.",
     recommend_traders:
       "Recommend a frozen diversified plan of 3–6 fresh eligible traders using saved or supplied preferences.",
     get_trader_profile:

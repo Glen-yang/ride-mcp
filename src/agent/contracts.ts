@@ -39,6 +39,61 @@ export const inputs = {
     })
     .strict(),
   start_copy: z.object({ plan_id: id }).strict(),
+  recalculate_plan: z
+    .object({
+      plan_id: id,
+      preferences: preferences.optional(),
+      allocations: z
+        .array(
+          z
+            .object({
+              trader_id: id,
+              amount_usdc: positiveMoney,
+              leverage_cap: z.number().int().min(1).max(8),
+              stop_loss_pct: z.number().min(1).max(100).default(30),
+            })
+            .strict(),
+        )
+        .min(3)
+        .max(6)
+        .optional(),
+    })
+    .strict(),
+  get_performance: z
+    .object({
+      portfolio_id: id.optional(),
+      period: z.enum(["daily", "weekly", "inception"]).default("weekly"),
+    })
+    .strict(),
+  diagnose_copy: z
+    .object({
+      copy_id: id,
+      start_at: z.number().int().positive(),
+      end_at: z.number().int().positive(),
+    })
+    .strict()
+    .refine(
+      (v) => v.end_at > v.start_at && v.end_at - v.start_at <= 31 * 86400_000,
+      "Use a time window of at most 31 days",
+    ),
+  get_notification_preferences: z.object({}).strict(),
+  set_notification_preferences: z
+    .object({
+      daily_digest: z.boolean(),
+      local_time: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/),
+      timezone: z
+        .string()
+        .max(80)
+        .refine((v) => {
+          try {
+            new Intl.DateTimeFormat("en", { timeZone: v });
+            return true;
+          } catch {
+            return false;
+          }
+        }, "Use an IANA timezone"),
+    })
+    .strict(),
   get_portfolio: portfolioInput,
   update_copy: z
     .object({
@@ -71,6 +126,13 @@ export const mutationTools = new Set<ToolName>([
   "update_copy",
   "stop_copy",
   "close_position",
+]);
+// State edits are distinct from proposals that can move funds.
+export const stateTools = new Set<ToolName>([
+  "set_preferences",
+  "recalculate_plan",
+  "recommend_traders",
+  "set_notification_preferences",
 ]);
 export const TOOL_NAMES = Object.keys(inputs) as ToolName[];
 export const output = z

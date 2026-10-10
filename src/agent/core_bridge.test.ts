@@ -50,3 +50,66 @@ it("reads the real scheduler tradeMetrics timestamp and keeps missing or future 
     await bridge.close();
   }
 });
+it("uses mainnet source fills even for testnet followers and strips upstream identities", async () => {
+  const bridge = new CoreBridge(
+      "https://core.test",
+      "fixture",
+      "postgresql://localhost/unused",
+      "s".repeat(32),
+      "testnet",
+    ),
+    stub = bridge as any;
+  const at = now() - 1000,
+    address = "0x" + "a".repeat(40);
+  let sourceNetwork = false;
+  stub.resolve = async () => ({ address });
+  stub.info = async (_payload: any, source: boolean) => {
+    sourceNetwork = source;
+    return [
+      {
+        tid: 1,
+        oid: 2,
+        time: at,
+        coin: "BTC",
+        sz: "1",
+        side: "B",
+        px: "100",
+        fee: "0.1",
+        feeToken: "USDC",
+        closedPnl: "2",
+        wallet: address,
+      },
+    ];
+  };
+  try {
+    const result = (await bridge.operation("source_fills", {
+      trader_id: candidate(1).id,
+      market: "perps",
+      start_at: at - 1,
+      end_at: at + 1,
+    })) as any;
+    assert.equal(sourceNetwork, true);
+    assert.equal(result.complete, true);
+    assert.equal(result.fills[0].realized_usdc, "2");
+    assert(!JSON.stringify(result).includes(address));
+    const prediction = (await bridge.operation("source_fills", {
+      trader_id: "prediction_test",
+      market: "prediction",
+      start_at: at - 1,
+      end_at: at + 1,
+    })) as any;
+    assert.equal(prediction.complete, false);
+    stub.core = async () => [];
+    await assert.rejects(
+      bridge.notify("alice", {
+        id: "update_test",
+        kind: "daily_digest",
+        message: "test",
+        portfolio_id: null,
+      }),
+      /No Ride App device/,
+    );
+  } finally {
+    await bridge.close();
+  }
+});

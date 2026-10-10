@@ -61,6 +61,8 @@ it("production read-only gateway retains CLI queries and rejects writes at both 
       assert.equal((await post(port, "/agent/v1/get_portfolio")).status, 200);
       for (const operation of [
         "set_preferences",
+        "recalculate_plan",
+        "set_notification_preferences",
         "start_copy",
         "update_copy",
         "stop_copy",

@@ -10,7 +10,7 @@ The client installation is independent of server activation. Three Node services
 - `REDIS_URL`: durable hosted OAuth state; required for non-loopback issuers.
 - `RIDE_AGENT_BACKEND_URL`: private control service URL.
 - `RIDE_AGENT_HUMAN_COOKIE_KEY`: at least 32-byte independent cookie encryption secret.
-- `RIDE_PUBLIC_SUBMISSION_MODE=true`: five read tools, no machine write or browser confirmation routes.
+- `RIDE_PUBLIC_SUBMISSION_MODE=true`: eight read tools, no machine write or browser confirmation routes.
   Read-only CLI query routes remain available. Trading requests return `READ_ONLY`.
 
 The native App sends its existing Core JWT directly to `/agent/human/*`. OAuth machine tokens cannot confirm, authorize or revoke. The browser human surface signs in through Privy and uses encrypted, HttpOnly, SameSite cookies plus origin checks.

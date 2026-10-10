@@ -6,7 +6,7 @@
     "Segoe UI",
     sans-serif;
   color: #171717;
-  background: #f4f4f0;
+  background: #fcfbf8;
   font-size: 14px;
 }
 * {
@@ -26,7 +26,7 @@ main {
   letter-spacing: -1px;
 }
 .brand span {
-  background: #ffe500;
+  background: #ffd94a;
   padding: 2px 8px;
   border-radius: 6px;
 }
@@ -98,7 +98,7 @@ h2 {
 }
 button,
 .button {
-  background: #ffe500;
+  background: #ffd94a;
   color: #111;
   border: 0;
   border-radius: 10px;
@@ -189,4 +189,43 @@ footer {
     font-size: 21px;
   }
 }
-[hidden] { display: none !important; }
+[hidden] {
+  display: none !important;
+}
+.field {
+  display: block;
+  color: #666;
+  font-size: 12px;
+  margin-top: 10px;
+}
+.field input,
+.field select {
+  display: block;
+  color: #171717;
+  margin-top: 6px;
+}
+td,
+th {
+  overflow-wrap: anywhere;
+}
+.card .grid {
+  margin-top: 12px;
+}
+.card h2:not(:first-child) {
+  margin-top: 20px;
+}
+summary {
+  cursor: pointer;
+  font-weight: 700;
+  padding: 12px 0;
+}
+.grid .card button {
+  margin-top: 10px;
+  padding: 8px 12px;
+  font-size: 12px;
+}
+@media (min-width: 820px) {
+  .grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}

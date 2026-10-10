@@ -4,6 +4,7 @@ import {
   failure,
   inputs,
   mutationTools,
+  stateTools,
   publicResult,
   TOOL_NAMES,
   type ToolName,
@@ -27,7 +28,7 @@ export function mountAgentProxy(
       if (
         readOnly &&
         (mutationTools.has(name as ToolName) ||
-          name === "set_preferences" ||
+          (stateTools.has(name as ToolName) && name !== "recommend_traders") ||
           name === "proposal")
       )
         throw new AgentError(

@@ -40,7 +40,10 @@ export interface Update {
   portfolio_id: string | null;
   message: string;
   data: Record<string, unknown>;
-  notification: "pending" | "delivered";
+  notification: "pending" | "delivered" | "cancelled";
+  notification_attempts?: number;
+  next_notification_at?: number;
+  notification_error?: string;
 }
 export interface HoldingCheckpoint {
   at: number;
@@ -55,6 +58,14 @@ export interface State {
   delegation: Delegation | null;
   updates: Update[];
   checkpoints: HoldingCheckpoint[];
+  performance?: import("./analytics.js").PerformancePoint[];
+  notification_preferences?: {
+    daily_digest: boolean;
+    local_time: string;
+    timezone: string;
+    enabled_at: number;
+    last_digest_day?: string;
+  };
 }
 export const emptyState = (): State => ({
   preferences: null,
@@ -119,7 +130,7 @@ export class PgRepository implements Repository {
   async users(): Promise<string[]> {
     return (
       await this.pool.query(
-        "SELECT user_id FROM ride_agent_state WHERE EXISTS (SELECT 1 FROM jsonb_array_elements(state->'portfolios') p WHERE p->>'state' <> 'closed') OR EXISTS (SELECT 1 FROM jsonb_array_elements(state->'updates') u WHERE u->>'notification' = 'pending')",
+        "SELECT user_id FROM ride_agent_state WHERE EXISTS (SELECT 1 FROM jsonb_array_elements(state->'portfolios') p WHERE p->>'state' <> 'closed') OR EXISTS (SELECT 1 FROM jsonb_array_elements(state->'updates') u WHERE u->>'notification' = 'pending') OR state->'notification_preferences'->>'daily_digest' = 'true'",
       )
     ).rows.map((x) => x.user_id);
   }

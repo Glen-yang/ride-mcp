@@ -202,6 +202,22 @@ export interface Portfolio {
   control_id?: string;
   venue_accounts?: Record<string, string>;
   ledger_chain_block?: number;
+  receipts?: import("./analytics.js").Receipt[];
+  decisions?: import("./analytics.js").Decision[];
+  configurations?: {
+    at: number;
+    copy_id: string;
+    config: ReturnType<typeof import("./analytics.js").configAt>;
+  }[];
+  audit_started_at?: number;
+  audit_verified_at?: number;
+  funding_receipts?: {
+    copy_id: string;
+    id: string;
+    key: string;
+    at: number;
+    amount_usdc: string;
+  }[];
 }
 
 export function allocate(budget: Decimal.Value, count: number): string[] {
@@ -220,7 +236,10 @@ export function allocate(budget: Decimal.Value, count: number): string[] {
       .toFixed(6),
   );
 }
-function recommendedLeverage(p: Preferences, c: Candidate): number | null {
+export function recommendedLeverage(
+  p: Preferences,
+  c: Candidate,
+): number | null {
   const drawdown = c.source_drawdown_pct;
   if (drawdown == null || !Number.isFinite(drawdown) || drawdown < 0)
     return null;
@@ -234,8 +253,11 @@ function recommendedLeverage(p: Preferences, c: Candidate): number | null {
   const cap = Math.min(c.venue_max_leverage, atrCap, riskCap);
   return cap >= 3 ? cap : null;
 }
-export function recommend(p: Preferences, candidates: Candidate[]): Plan {
-  const allowed = candidates
+export function eligibleCandidates(
+  p: Preferences,
+  candidates: Candidate[],
+): Candidate[] {
+  return candidates
     .filter(
       (c) =>
         c.eligibility === "PASS" &&
@@ -252,6 +274,9 @@ export function recommend(p: Preferences, candidates: Candidate[]): Plan {
           )),
     )
     .sort((a, b) => b.score - a.score || a.id.localeCompare(b.id));
+}
+export function recommend(p: Preferences, candidates: Candidate[]): Plan {
+  const allowed = eligibleCandidates(p, candidates);
   const chosen: Candidate[] = [];
   while (chosen.length < 6 && allowed.length) {
     allowed.sort(
@@ -418,7 +443,30 @@ export function pnl(p: Portfolio): {
   sleeves: { copy_id: string; net_usdc: string | null }[];
   external_flows_usdc: string;
 } {
-  if (!p.snapshot || p.reconciliation !== "complete")
+  const quantitiesMatch =
+    p.snapshot &&
+    [
+      ...new Set([
+        ...Object.keys(p.snapshot.positions),
+        ...p.sleeves.flatMap((s) => Object.keys(s.lots)),
+      ]),
+    ].every((key) =>
+      p.sleeves
+        .reduce((n, s) => n.plus(s.lots[key]?.quantity ?? 0), D(0))
+        .eq(p.snapshot!.positions[key] ?? 0),
+    );
+  if (
+    !p.snapshot ||
+    p.reconciliation !== "complete" ||
+    !p.snapshot.coverage_complete ||
+    !fresh(p.snapshot.observed_at) ||
+    !quantitiesMatch ||
+    p.sleeves.some((s) =>
+      Object.values(s.lots).some(
+        (l) => !D(l.quantity).isZero() && !p.snapshot!.prices[l.key],
+      ),
+    )
+  )
     return {
       net_usdc: null,
       sleeves: p.sleeves.map((s) => ({ copy_id: s.copy_id, net_usdc: null })),

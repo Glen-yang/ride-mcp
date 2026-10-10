@@ -132,6 +132,7 @@ async function main(): Promise<void> {
     res.json({
       service: "ride-agent-mcp",
       version: "3",
+      release: VERSION,
       public_submission_mode: readOnly,
     }),
   );

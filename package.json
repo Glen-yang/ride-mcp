@@ -1,6 +1,6 @@
 {
   "name": "@glen-yang/ride-cli",
-  "version": "0.2.3",
+  "version": "0.3.0",
   "private": false,
   "type": "module",
   "scripts": {
@@ -8,6 +8,7 @@
     "start": "node dist/start.js",
     "test": "tsx --test src/*.test.ts src/agent/*.test.ts src/cli/*.test.ts",
     "test:functional": "npm run build && tsx scripts/functional-acceptance.ts",
+    "preview:cards": "npm run build && tsx scripts/conversational-preview.ts",
     "prepare": "npm run build",
     "prepack": "npm run build",
     "start:backend": "node dist/backend.js",

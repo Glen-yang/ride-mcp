@@ -15,6 +15,14 @@ export interface SourceSnapshot {
   complete: boolean;
 }
 export interface VenueAdapter {
+  sourceFills?(
+    trader: Candidate,
+    start: number,
+    end: number,
+  ): Promise<{ fills: SourceFill[]; complete: boolean; reason?: string }>;
+  notificationStatus?(
+    user: string,
+  ): Promise<{ configured: boolean; device_registered: boolean }>;
   candidates(): Promise<Candidate[]>;
   profile(id: string): Promise<Candidate>;
   preflight(
@@ -51,6 +59,15 @@ export interface VenueAdapter {
       portfolio_id: string | null;
     },
   ): Promise<void>;
+}
+export interface SourceFill {
+  id: string;
+  key: string;
+  quantity: string;
+  price: string;
+  fee_usdc: string | null;
+  realized_usdc: string | null;
+  at: number;
 }
 // Private, authenticated execution boundary. It holds Core S2S identity, never
 // signing secrets. Its responses are normalized; machine routes cannot confirm.
@@ -115,6 +132,24 @@ export class BridgeAdapter implements VenueAdapter {
   }
   candidates() {
     return this.call<Candidate[]>("candidates", {});
+  }
+  sourceFills(trader: Candidate, start: number, end: number) {
+    return this.call<{
+      fills: SourceFill[];
+      complete: boolean;
+      reason?: string;
+    }>("source_fills", {
+      trader_id: trader.id,
+      market: trader.market,
+      start_at: start,
+      end_at: end,
+    });
+  }
+  notificationStatus(user: string) {
+    return this.call<{ configured: boolean; device_registered: boolean }>(
+      "notification_status",
+      { user_id: user },
+    );
   }
   profile(id: string) {
     return this.call<Candidate>("profile", { trader_id: id });

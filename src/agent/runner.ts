@@ -21,6 +21,13 @@ import {
 } from "./ledger.js";
 import { event, AgentService } from "./service.js";
 import type { State } from "./repository.js";
+import {
+  recordPerformance,
+  recordReceipt,
+  recordDecision,
+  localDay,
+  performanceView,
+} from "./analytics.js";
 
 export class AgentRunner {
   constructor(private service: AgentService) {}
@@ -52,6 +59,9 @@ export class AgentRunner {
             p.ledger_started_at = snap.observed_at;
             p.snapshot = snap;
             p.state = "active";
+            p.reconciliation = "complete";
+            p.audit_started_at = snap.observed_at;
+            recordPerformance(state, p);
             event(
               state,
               "portfolio_active",
@@ -67,6 +77,7 @@ export class AgentRunner {
               true,
             );
           p.snapshot = snap;
+          p.audit_started_at ??= snap.observed_at;
           if (p.state === "attention")
             p.state = p.loss_latched ? "loss_triggered" : "active";
           for (const e of p.executions.filter(
@@ -88,7 +99,9 @@ export class AgentRunner {
             )
             .sort((a, b) => a.at - b.at || a.id.localeCompare(b.id))) {
             if (!p.seen_fills.includes(fill.id)) {
+              const before = structuredClone(p.sleeves);
               applyFill(p, fill);
+              recordReceipt(p, fill, before);
               checkpoint(state, p, fill.key, fill.at);
             }
           }
@@ -100,7 +113,25 @@ export class AgentRunner {
               .reverse()
               .filter((c) => c.key === `${p.id}:${f.key}` && c.at <= f.at)
               .sort((a, b) => b.at - a.at)[0];
+            const before = p.sleeves.map((s) => ({
+              copy_id: s.copy_id,
+              funding: s.lots[f.key]?.funding ?? "0",
+            }));
             applyFunding(p, f, history?.quantities ?? {});
+            for (const old of before) {
+              const sleeve = p.sleeves.find((s) => s.copy_id === old.copy_id)!;
+              const delta = D(sleeve.lots[f.key]?.funding ?? 0).minus(
+                old.funding,
+              );
+              if (!delta.isZero())
+                (p.funding_receipts ??= []).push({
+                  copy_id: old.copy_id,
+                  id: f.id,
+                  key: f.key,
+                  at: f.at,
+                  amount_usdc: delta.toString(),
+                });
+            }
           }
           for (const flow of snap.flows.filter(
             (f) =>
@@ -112,6 +143,8 @@ export class AgentRunner {
             p.seen_flows.push(flow.id);
           }
           p.reconciliation = reconcileQuantities(p) ? "complete" : "incomplete";
+          if (p.reconciliation === "complete")
+            p.audit_verified_at = snap.observed_at;
           for (const e of p.executions.filter(
             (e) => e.status === "completed",
           )) {
@@ -121,6 +154,7 @@ export class AgentRunner {
             }
           }
           const profit = pnl(p);
+          recordPerformance(state, p);
           if (
             profit.net_usdc != null &&
             D(profit.net_usdc).lte(
@@ -271,6 +305,7 @@ export class AgentRunner {
               return {
                 ...x,
                 quantity: quantity.toString(),
+                raw_source_quantity: x.quantity,
                 source_leverage: leverage,
                 price: px,
               };
@@ -298,6 +333,14 @@ export class AgentRunner {
                     .gt("0.002"))
               ) {
                 t.suppressed.push(x.key);
+                recordDecision(
+                  p,
+                  t,
+                  x,
+                  x.price,
+                  null,
+                  "ENTRY_DEVIATION_OR_MISSING_SOURCE_PRICE",
+                );
                 continue;
               }
               let q = D(x.quantity)
@@ -323,10 +366,28 @@ export class AgentRunner {
                   .times(x.price)
                   .lt(snap.min_notionals[x.key] ?? t.trader.min_notional_usdc)
               ) {
-                if (current.isZero()) continue;
+                if (current.isZero()) {
+                  recordDecision(
+                    p,
+                    t,
+                    x,
+                    x.price,
+                    null,
+                    "BELOW_MINIMUM_NOTIONAL",
+                  );
+                  continue;
+                }
                 q = D(0);
               }
               t.intents[x.key] = { ...x, quantity: q.toString() };
+              recordDecision(
+                p,
+                t,
+                x,
+                x.price,
+                q.toString(),
+                "TARGET_EVALUATED",
+              );
             }
             t.initialized = true;
             t.source_revision = source.revision;
@@ -528,6 +589,7 @@ export class AgentRunner {
           p.state = p.loss_latched ? "loss_triggered" : "attention";
           eventOnce(state, err.code, p.id, err.message);
         }
+        recordPerformance(state, p);
       }
     });
     await repository.transact(user, async (state) => {
@@ -596,13 +658,59 @@ export class AgentRunner {
             );
           }
         }
+      const prefs = state.notification_preferences;
+      if (prefs?.daily_digest) {
+        const local = localDay(now(), prefs.timezone),
+          enabled = localDay(prefs.enabled_at, prefs.timezone);
+        if (
+          local.time >= prefs.local_time &&
+          prefs.last_digest_day !== local.day &&
+          (enabled.day < local.day || enabled.time < prefs.local_time)
+        ) {
+          const p = state.portfolios.at(-1);
+          if (p) {
+            const performance = performanceView(state, p, "daily");
+            event(
+              state,
+              "daily_digest",
+              p.id,
+              `Ride daily report · ${local.day} · net profit ${performance.net_profit_usdc ?? "unavailable"} USDC · ${performance.coverage} coverage.`,
+              { performance, timezone: prefs.timezone, digest_day: local.day },
+            );
+          }
+          prefs.last_digest_day = local.day;
+        }
+      }
       for (const update of state.updates.filter(
-        (e) => e.notification === "pending",
+        (e) =>
+          e.notification === "pending" &&
+          (e.next_notification_at ?? 0) <= now(),
       ))
         try {
+          // Disabling an opted-in digest cancels queued digest delivery only.
+          if (
+            update.kind === "daily_digest" &&
+            (!prefs?.daily_digest ||
+              update.data.digest_day !== localDay(now(), prefs.timezone).day)
+          ) {
+            update.notification = "cancelled";
+            continue;
+          }
           await adapter.notify(user, update);
           update.notification = "delivered";
-        } catch {
+          update.notification_error = undefined;
+          update.next_notification_at = undefined;
+        } catch (error) {
+          update.notification_attempts =
+            (update.notification_attempts ?? 0) + 1;
+          update.next_notification_at =
+            now() +
+            Math.min(
+              3600_000,
+              5000 * 2 ** Math.min(10, update.notification_attempts),
+            );
+          update.notification_error =
+            error instanceof AgentError ? error.code : "PUSH_UNAVAILABLE";
           /* Durable retry on the next tick. */
         }
     });

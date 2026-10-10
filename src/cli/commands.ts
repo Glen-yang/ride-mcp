@@ -20,7 +20,7 @@ import { type ClientName } from "./setup.js";
 import { onboard } from "./onboarding.js";
 import { VERSION } from "../version.js";
 
-export const HELP = `Ride CLI\n  setup --client codex|claude-code|cursor [--trade] [--skip-login] [--server URL]\n  login --server https://YOUR-RIDE-HOST/mcp [--trade]\n  preferences --json '{"budget_usdc":"500","loss_trigger_pct":20,"market":"perps"}'\n  recommend | trader TRADER_ID | portfolio [PORTFOLIO_ID] | review [PORTFOLIO_ID]\n  copy start PLAN_ID | copy update COPY_ID --json '{"leverage_cap":5}'\n  copy stop COPY_ID [--mode wind_down|close_now]\n  updates [--cursor CURSOR] [--limit 20] | position close POSITION_ID\n  proposal PROPOSAL_ID | confirm PROPOSAL_ID\n  mcp [--server URL]\nSetup installs Skill + MCP and starts browser login (default server: https://mcp.onride.me/mcp).\nJSON output is default. --pretty renders a human-readable view. Confirmation opens Ride.\n`;
+export const HELP = `Ride CLI\n  setup --client codex|claude-code|cursor [--trade] [--skip-login] [--server URL]\n  login --server https://YOUR-RIDE-HOST/mcp [--trade]\n  preferences --json '{"budget_usdc":"500","loss_trigger_pct":20,"market":"perps"}'\n  recommend | trader TRADER_ID | portfolio [PORTFOLIO_ID] | review [PORTFOLIO_ID]\n  copy start PLAN_ID | copy update COPY_ID --json '{"leverage_cap":5}'\n  copy stop COPY_ID [--mode wind_down|close_now]\n  updates [--cursor CURSOR] [--limit 20] | position close POSITION_ID\n  plan recalculate PLAN_ID [--json ALLOCATIONS_JSON]\n  performance [PORTFOLIO_ID] [--period daily|weekly|inception]\n  diagnose COPY_ID --start-at MILLISECONDS --end-at MILLISECONDS\n  notifications [--json SETTINGS_JSON]\n  proposal PROPOSAL_ID | confirm PROPOSAL_ID\n  mcp [--server URL]\nSetup installs Skill + MCP and starts browser login (default server: https://mcp.onride.me/mcp).\nJSON output is default. --pretty renders a human-readable view. Confirmation opens Ride.\n`;
 export function parseCommand(argv: string[]): {
   command: string;
   name?: ToolName;
@@ -54,6 +54,25 @@ export function parseCommand(argv: string[]): {
     args = parsed;
   }
   if (command === "preferences") name = "set_preferences";
+  if (command === "plan" && positionals[1] === "recalculate") {
+    name = "recalculate_plan";
+    args.plan_id = positionals[2];
+  }
+  if (command === "performance") {
+    name = "get_performance";
+    if (positionals[1]) args.portfolio_id = positionals[1];
+    if (flags.period) args.period = flags.period;
+  }
+  if (command === "diagnose") {
+    name = "diagnose_copy";
+    args.copy_id = positionals[1];
+    args.start_at = Number(flags["start-at"]);
+    args.end_at = Number(flags["end-at"]);
+  }
+  if (command === "notifications")
+    name = flags.json
+      ? "set_notification_preferences"
+      : "get_notification_preferences";
   if (command === "recommend") name = "recommend_traders";
   if (command === "trader") {
     name = "get_trader_profile";

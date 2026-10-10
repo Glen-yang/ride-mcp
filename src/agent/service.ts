@@ -15,6 +15,8 @@ import {
   now,
   fresh,
   recommend,
+  recommendedLeverage,
+  eligibleCandidates,
   aggregate,
   risk,
   pnl,
@@ -30,6 +32,7 @@ import {
   type Delegation,
 } from "./repository.js";
 import type { VenueAdapter } from "./adapter.js";
+import { performanceView, recordConfigurations } from "./analytics.js";
 
 export class AgentService {
   constructor(
@@ -65,11 +68,18 @@ export class AgentService {
             400,
           );
         const plan = recommend(pref, pool);
-        s.plans = s.plans.filter((x) => x.expires_at > now());
+        s.plans = s.plans
+          .filter((x) => x.created_at > now() - 90 * 86400_000)
+          .slice(-99);
         s.plans.push(plan);
         return result(
           {
             plan,
+            candidates: eligibleCandidates(pref, pool),
+            candidate_limits: eligibleCandidates(pref, pool).map((c) => ({
+              trader_id: c.id,
+              leverage_cap: recommendedLeverage(pref, c),
+            })),
             portfolio_historical_drawdown_pct: null,
             reasons: plan.allocations.map((x) => ({
               trader_id: x.trader.id,
@@ -89,6 +99,254 @@ export class AgentService {
         return result({
           preferences: s.preferences,
           existing_portfolios_unchanged: true,
+        });
+      }
+      if (name === "recalculate_plan") {
+        const previous = s.plans.find((x) => x.id === args.plan_id);
+        if (!previous)
+          throw new AgentError(
+            "NOT_FOUND",
+            "Saved plan not found for this account.",
+            false,
+            404,
+          );
+        const pref = args.preferences
+          ? preferences.parse(args.preferences)
+          : previous.preferences;
+        const requested = (args.allocations ??
+          previous.allocations.map((x) => ({
+            trader_id: x.trader.id,
+            amount_usdc: x.amount_usdc,
+            leverage_cap: x.leverage_cap,
+            stop_loss_pct: x.stop_loss_pct,
+          }))) as {
+          trader_id: string;
+          amount_usdc: string;
+          leverage_cap: number;
+          stop_loss_pct: number;
+        }[];
+        if (
+          new Set(requested.map((x) => x.trader_id)).size !== requested.length
+        )
+          throw new AgentError(
+            "DUPLICATE_TRADER",
+            "Select each trader only once.",
+            false,
+            400,
+          );
+        const pool = await Promise.all(
+          requested.map((x) => this.adapter.profile(x.trader_id)),
+        );
+        const plan = recommend(pref, pool);
+        if (plan.allocations.length !== requested.length)
+          throw new AgentError(
+            "PLAN_CHANGED",
+            "A selected trader is no longer eligible for these preferences.",
+          );
+        const total = requested.reduce((n, x) => n.plus(x.amount_usdc), D(0));
+        if (total.gt(pref.budget_usdc))
+          throw new AgentError(
+            "BUDGET_EXCEEDED",
+            "Allocations exceed the requested budget.",
+          );
+        plan.allocations = requested.map((x, i) => {
+          const cap = recommendedLeverage(pref, pool[i])!;
+          if (
+            x.leverage_cap > cap ||
+            (pool[i].market === "prediction" && x.leverage_cap !== 1)
+          )
+            throw new AgentError(
+              "INVALID_LEVERAGE",
+              "Selected leverage exceeds the current trader, market or risk cap.",
+            );
+          if (
+            D(x.amount_usdc).lt(pool[i].min_notional_usdc) ||
+            D(x.amount_usdc).gt(total.times("0.55"))
+          )
+            throw new AgentError(
+              "INVALID_ALLOCATION",
+              "Each allocation must meet the minimum and stay at or below 55% of selected capital.",
+            );
+          return {
+            ...plan.allocations.find((a) => a.trader.id === x.trader_id)!,
+            amount_usdc: cash(x.amount_usdc),
+            leverage_cap: x.leverage_cap,
+            stop_loss_pct: x.stop_loss_pct,
+          };
+        });
+        s.plans = s.plans
+          .filter((x) => x.created_at > now() - 90 * 86400_000)
+          .slice(-99);
+        s.plans.push(plan);
+        const candidates = eligibleCandidates(
+          pref,
+          await this.adapter.candidates(),
+        );
+        return result(
+          {
+            plan,
+            candidates,
+            candidate_limits: candidates.map((c) => ({
+              trader_id: c.id,
+              leverage_cap: recommendedLeverage(pref, c),
+            })),
+            previous_plan_id: previous.id,
+            requires_new_confirmation: true,
+            unallocated_usdc: cash(D(pref.budget_usdc).minus(total)),
+            portfolio_historical_drawdown_pct: null,
+          },
+          "ok",
+          [
+            "Capital weights are not live exposure. Source entry and actual gross concentration are checked before execution.",
+            "Loss triggers initiate exits; slippage can exceed the threshold.",
+          ],
+        );
+      }
+      if (name === "get_performance") {
+        const p = findPortfolio(s, args.portfolio_id as string | undefined);
+        if (!p) return result({ performance: null }, "empty");
+        const performance = performanceView(s, p, args.period as string);
+        return result(
+          { performance },
+          performance.coverage === "complete" ? "ok" : "stale",
+        );
+      }
+      if (name === "diagnose_copy") {
+        const p = findByOwnership(s, args);
+        if (!p)
+          throw new AgentError(
+            "NOT_FOUND",
+            "Owned copy not found.",
+            false,
+            404,
+          );
+        const sleeve = p.sleeves.find((x) => x.copy_id === args.copy_id)!;
+        const start = args.start_at as number,
+          end = args.end_at as number;
+        if (end > now())
+          throw new AgentError(
+            "INVALID_WINDOW",
+            "The diagnostic window cannot extend into the future.",
+            false,
+            400,
+          );
+        let source: { fills: unknown[]; complete: boolean; reason?: string } = {
+          fills: [],
+          complete: false,
+          reason: "Source fill history unavailable.",
+        };
+        try {
+          source =
+            (await this.adapter.sourceFills?.(sleeve.trader, start, end)) ??
+            source;
+        } catch {
+          /* Explicit missing evidence below. */
+        }
+        const receipts = (p.receipts ?? []).filter(
+          (x) =>
+            x.copy_id === sleeve.copy_id &&
+            x.fill.at >= start &&
+            x.fill.at < end,
+        );
+        const decisions = (p.decisions ?? []).filter(
+          (x) => x.copy_id === sleeve.copy_id && x.at >= start && x.at < end,
+        );
+        const began = p.audit_started_at ?? Infinity;
+        const followerComplete =
+          start >= began && (p.audit_verified_at ?? 0) >= end;
+        return result(
+          {
+            diagnostic: {
+              copy_id: sleeve.copy_id,
+              trader: sleeve.trader.handle,
+              window: { start_at: start, end_at: end },
+              source_fills: source.fills,
+              source_coverage: source.complete ? "complete" : "incomplete",
+              follower_verified_through: p.audit_verified_at ?? null,
+              source_missing_reason: source.reason ?? null,
+              follower_coverage: followerComplete ? "complete" : "incomplete",
+              follower_fills: receipts,
+              decisions,
+              current_configuration: {
+                amount_usdc: sleeve.amount_usdc,
+                leverage_cap: sleeve.leverage_cap,
+                stop_loss_pct: sleeve.stop_loss_pct,
+              },
+              funding: (p.funding_receipts ?? []).filter(
+                (x) =>
+                  x.copy_id === sleeve.copy_id && x.at >= start && x.at < end,
+              ),
+              executions: p.executions
+                .filter(
+                  (e) =>
+                    e.created_at >= start &&
+                    e.created_at < end &&
+                    (sleeve.copy_id in e.allocations ||
+                      sleeve.copy_id in (e.unfilled_allocations ?? {})),
+                )
+                .map(
+                  ({ allocations, unfilled_allocations, fingerprint, ...e }) =>
+                    e,
+                ),
+              events: s.updates
+                .filter(
+                  (e) =>
+                    e.portfolio_id === p.id &&
+                    e.at >= start &&
+                    e.at < end &&
+                    (!e.data.copy_id || e.data.copy_id === sleeve.copy_id),
+                )
+                .map(({ notification, ...e }) => e),
+              fees_usdc: receipts.length
+                ? cash(receipts.reduce((n, x) => n.plus(x.fee_usdc), D(0)))
+                : followerComplete
+                  ? "0.000000"
+                  : null,
+              profit_difference_usdc: null,
+              missing_reason:
+                "Source and follower fills are separate evidence. No counterfactual profit or fill pairing is inferred; missing historical evidence remains unavailable.",
+            },
+          },
+          source.complete && followerComplete ? "ok" : "stale",
+        );
+      }
+      if (
+        name === "get_notification_preferences" ||
+        name === "set_notification_preferences"
+      ) {
+        if (name === "set_notification_preferences")
+          s.notification_preferences = {
+            ...(args as {
+              daily_digest: boolean;
+              local_time: string;
+              timezone: string;
+            }),
+            enabled_at: now(),
+            last_digest_day: s.notification_preferences?.last_digest_day,
+          };
+        let delivery = { configured: false, device_registered: false };
+        try {
+          delivery =
+            (await this.adapter.notificationStatus?.(user)) ?? delivery;
+        } catch {
+          /* Report unavailable without claiming delivery. */
+        }
+        return result({
+          notification_preferences: s.notification_preferences ?? {
+            daily_digest: false,
+            local_time: "09:00",
+            timezone: "UTC",
+          },
+          delivery: {
+            ...delivery,
+            channel: "Ride App",
+            status:
+              delivery.configured && delivery.device_registered
+                ? "ready"
+                : "unavailable",
+          },
+          monitoring: "server",
+          critical_risk_alerts: "enabled",
         });
       }
       if (name === "get_updates") {
@@ -113,7 +371,30 @@ export class AgentService {
       }
       if (name === "get_portfolio") {
         const p = findPortfolio(s, args.portfolio_id as string | undefined);
-        if (!p) return result({ portfolio: null }, "empty");
+        if (!p) {
+          if (args.portfolio_id) return result({ portfolio: null }, "empty");
+          const plan = s.plans.at(-1);
+          return plan
+            ? result(
+                {
+                  portfolio: null,
+                  plan,
+                  saved_preview: true,
+                  plan_status: plan.expires_at > now() ? "ready" : "expired",
+                  candidates: plan.allocations.map((a) => a.trader),
+                  unallocated_usdc: cash(
+                    D(plan.preferences.budget_usdc).minus(
+                      plan.allocations.reduce(
+                        (n, a) => n.plus(a.amount_usdc),
+                        D(0),
+                      ),
+                    ),
+                  ),
+                },
+                "empty",
+              )
+            : result({ portfolio: null }, "empty");
+        }
         try {
           p.snapshot = await this.adapter.account(user, p);
         } catch {
@@ -160,6 +441,7 @@ export class AgentService {
         );
       if (plan.expires_at <= now())
         throw new AgentError("PLAN_EXPIRED", "Refresh trader recommendations.");
+      await this.validatePlan(plan);
       if (s.portfolios.some((x) => x.state !== "closed"))
         throw new AgentError(
           "OWNERSHIP_CONFLICT",
@@ -426,6 +708,7 @@ export class AgentService {
           "Plan expired or account ownership changed.",
         );
       p = fromPlan(plan, q.portfolio_id);
+      await this.validatePlan(plan);
     }
     if (!p || p.revision !== q.expected_revision)
       throw new AgentError(
@@ -474,6 +757,7 @@ export class AgentService {
     p.snapshot = snapshot;
     p.revision++;
     p.control_id = q.id;
+    recordConfigurations(p);
     q.committed_revision = p.revision;
     // Before changing target policy, reconcile Core's old tasks. The adapter
     // fences old revision work; no stale increasing order may survive a stop.
@@ -495,6 +779,25 @@ export class AgentService {
       "Confirmed parameters queued for execution.",
       { proposal_id: q.id },
     );
+  }
+  private async validatePlan(plan: Plan): Promise<void> {
+    const rows = await Promise.all(
+      plan.allocations.map((a) => this.adapter.profile(a.trader.id)),
+    );
+    const allowed = eligibleCandidates(plan.preferences, rows);
+    if (
+      allowed.length !== plan.allocations.length ||
+      plan.allocations.some(
+        (a, i) =>
+          a.leverage_cap >
+            (recommendedLeverage(plan.preferences, rows[i]) ?? 0) ||
+          D(a.amount_usdc).lt(rows[i].min_notional_usdc),
+      )
+    )
+      throw new AgentError(
+        "PLAN_CHANGED",
+        "Trader eligibility or execution limits changed; recalculate and review a new plan.",
+      );
   }
   private async mutatePreview(
     p: Portfolio,
@@ -552,6 +855,15 @@ export class AgentService {
         const trader = await this.adapter.profile(
           args.replacement_trader_id as string,
         );
+        const replacementCap = recommendedLeverage(p.preferences, trader);
+        if (
+          !eligibleCandidates(p.preferences, [trader]).length ||
+          replacementCap == null
+        )
+          throw new AgentError(
+            "TRADER_INELIGIBLE",
+            "Replacement needs fresh, eligible scores and verified risk limits.",
+          );
         if (
           trader.eligibility !== "PASS" ||
           trader.expires_at <= now() ||
@@ -570,6 +882,7 @@ export class AgentService {
           );
         const replacement: Sleeve = {
           ...s,
+          leverage_cap: Math.min(s.leverage_cap, replacementCap),
           copy_id: String(args.replacement_copy_id ?? uid("copy")),
           trader,
           state: "active",
@@ -611,6 +924,13 @@ export class AgentService {
           throw new AgentError(
             "INVALID_LEVERAGE",
             "Prediction positions require leverage 1.",
+          );
+        const current = await this.adapter.profile(s.trader.id);
+        const allowed = recommendedLeverage(p.preferences, current);
+        if ((args.leverage_cap as number) > (allowed ?? 0))
+          throw new AgentError(
+            "INVALID_LEVERAGE",
+            "Leverage exceeds the current trader, venue or portfolio risk cap.",
           );
         s.leverage_cap = args.leverage_cap as number;
         for (const x of Object.values(s.intents)) {
@@ -733,6 +1053,8 @@ export function portfolioView(p: Portfolio): Result {
         revision: p.revision,
         state: p.state,
         preferences: p.preferences,
+        created_at: p.created_at,
+        ledger_started_at: p.ledger_started_at,
         account_value_usdc: snap?.account_value_usdc ?? null,
         available_usdc: stale ? null : (snap?.available_usdc ?? null),
         reserved_usdc: cash(

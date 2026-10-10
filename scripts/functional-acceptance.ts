@@ -51,6 +51,7 @@ const users = {
   windDown: randomUUID(),
   prediction: randomUUID(),
   both: randomUUID(),
+  preview: randomUUID(),
 };
 const identities = new Map(
   Object.entries(users).map(([name, id]) => ["fixture_core_" + name, id]),
@@ -1210,6 +1211,84 @@ try {
       return {
         separateBalanceCheck: insufficient.error.code,
         markets: [...new Set(portfolio.positions.map((p: any) => p.market))],
+      };
+    },
+  );
+  await check("28 零余额预览、编辑重算、充值后新确认", async () => {
+    venue.reset();
+    venue.pool = [1, 2, 3, 4, 5, 6].map(candidate);
+    const c = await oauth("preview");
+    const account = venue.accountFor(users.preview);
+    account.available_usdc = "0";
+    venue.available.set(users.preview, "0");
+    const first = (
+      await ok(c.client, "recommend_traders", { preferences: pref })
+    ).data.plan;
+    const denied = await tool(c.client, "start_copy", { plan_id: first.id });
+    assert.equal(denied.error.code, "INSUFFICIENT_FUNDS");
+    await repo.transact(users.preview, async (s) => {
+      s.plans.find((p) => p.id === first.id)!.expires_at = 0;
+    });
+    const refreshed = (
+      await ok(c.client, "recalculate_plan", { plan_id: first.id })
+    ).data.plan;
+    assert.notEqual(first.id, refreshed.id);
+    const cross = await tool(bob.client, "recalculate_plan", {
+      plan_id: first.id,
+    });
+    assert.equal(cross.error.code, "NOT_FOUND");
+    account.available_usdc = "500";
+    venue.available.set(users.preview, "500");
+    const proposal = (
+      await ok(c.client, "start_copy", { plan_id: refreshed.id })
+    ).data.proposal;
+    assert.equal(proposal.status, "requires_confirmation");
+    await approve("preview", proposal);
+    await settle("preview");
+    return {
+      previewBeforeFunding: true,
+      newPlan: refreshed.id,
+      confirmationRequired: true,
+    };
+  });
+  await check(
+    "29 持久化收益、跟单诊断和通知设置经过真实 MCP/HTTP",
+    async () => {
+      const c = await oauth("preview");
+      const portfolio = (await ok(c.client, "get_portfolio")).data.portfolio;
+      const history = (
+        await ok(c.client, "get_performance", {
+          portfolio_id: portfolio.id,
+          period: "inception",
+        })
+      ).data.performance;
+      assert.ok(history.points.length > 0);
+      assert.notEqual(history.inception_net_profit_usdc, null);
+      const diagnostic = (
+        await ok(c.client, "diagnose_copy", {
+          copy_id: portfolio.sleeves[0].copy_id,
+          start_at: portfolio.ledger_started_at,
+          end_at: now(),
+        })
+      ).data.diagnostic;
+      assert.equal(diagnostic.profit_difference_usdc, null);
+      const settings = (
+        await ok(c.client, "set_notification_preferences", {
+          daily_digest: true,
+          local_time: "09:00",
+          timezone: "Asia/Shanghai",
+        })
+      ).data.notification_preferences;
+      assert.equal(settings.daily_digest, true);
+      const stored = (await ok(c.client, "get_notification_preferences")).data
+        .notification_preferences;
+      assert.equal(stored.timezone, "Asia/Shanghai");
+      const cliHistory = await cli(["performance", "--period", "inception"]);
+      assert.ok("performance" in cliHistory.data);
+      return {
+        historicalPoints: history.points.length,
+        diagnostic: diagnostic.source_coverage,
+        settings: stored,
       };
     },
   );

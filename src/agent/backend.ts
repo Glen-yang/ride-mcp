@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import "dotenv/config";
 import express from "express";
+import { VERSION } from "../version.js";
 import { z } from "zod";
 import { PgRepository, Cursor } from "./repository.js";
 import { BridgeAdapter } from "./adapter.js";
@@ -13,6 +14,7 @@ import {
   publicResult,
   TOOL_NAMES,
   mutationTools,
+  stateTools,
   type ToolName,
   id,
   positiveMoney,
@@ -69,6 +71,7 @@ export function backendApp(
     res.json({
       service: "ride-agent",
       version: "3",
+      release: VERSION,
       status: "ready",
       read_only: readOnly,
     }),
@@ -95,7 +98,7 @@ export function backendApp(
       if (
         readOnly &&
         (mutationTools.has(name as ToolName) ||
-          name === "set_preferences" ||
+          (stateTools.has(name as ToolName) && name !== "recommend_traders") ||
           name === "proposal")
       )
         throw new AgentError(
