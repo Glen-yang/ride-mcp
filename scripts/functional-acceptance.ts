@@ -52,6 +52,9 @@ const users = {
   prediction: randomUUID(),
   both: randomUUID(),
   preview: randomUUID(),
+  v17: randomUUID(),
+  v17Single: randomUUID(),
+  v17Rwa: randomUUID(),
 };
 const identities = new Map(
   Object.entries(users).map(([name, id]) => ["fixture_core_" + name, id]),
@@ -110,6 +113,36 @@ class SimulatedVenue implements VenueAdapter {
     );
     s.available_usdc = this.available.get(user) ?? s.account_value_usdc;
     s.observed_at = now();
+  }
+  async depositOptions() {
+    return {
+      routes: [
+        {
+          market: "perps",
+          asset: "USDC",
+          network: "Arbitrum",
+          activation_required: true,
+        },
+      ],
+    };
+  }
+  async depositAddress(user: string, input: any) {
+    return {
+      id: "deposit_" + randomUUID().replaceAll("-", ""),
+      market: input.market,
+      asset: input.asset,
+      network: input.network,
+      address: "0x" + "5".repeat(40),
+      provider: "wallet" as const,
+      created_at: now(),
+    };
+  }
+  async depositStatus(deposit: any) {
+    return {
+      deposit_id: deposit.id,
+      status: "awaiting_deposit",
+      available_to_copy: false,
+    };
   }
   async candidates() {
     return structuredClone(this.pool);
@@ -383,7 +416,21 @@ try {
     );
     res.json(
       id
-        ? { data: { copyTradeSummary: { totalConfigs: 0 }, me: { id } } }
+        ? {
+            data: {
+              copyTradeSummary: { totalConfigs: 0 },
+              me: { id },
+              myCopyTradeConfigs: [],
+              myPerpsAutoRideConfigs: [],
+              myPerpsAutoRidePositions: [],
+              ...Object.fromEntries(
+                [0, 1, 2, 3].map((i) => [
+                  "positions" + i,
+                  { positions: [], totalCount: 0, hasNextPage: false },
+                ]),
+              ),
+            },
+          }
         : { errors: [{ message: "Fixture identity rejected" }] },
     );
   });
@@ -1292,6 +1339,139 @@ try {
       };
     },
   );
+  venue.reset();
+  venue.pool = Array.from({ length: 24 }, (_, i) => candidate(i + 1));
+  const v17 = await oauth("v17"),
+    v17Pref = {
+      ...pref,
+      loss_trigger_pct: 40,
+      portfolio_kind: "basket",
+      basket_size: 4,
+      risk_tolerance: "medium",
+      asset_category: "crypto",
+      copy_mode: "ride_recommends",
+      loss_policy: "pause_then_exit",
+      emergency_exit_pct: 70,
+    };
+  let v17Plan: any, v17Deposit: any;
+  await check(
+    "30 HTML 新偏好、2–8 人组合和独立风险偏好经真实 MCP",
+    async () => {
+      const response = await ok(v17.client, "recommend_traders", {
+        preferences: v17Pref,
+        batch_action: "first",
+      });
+      v17Plan = response.data.plan;
+      assert.equal(v17Plan.allocations.length, 4);
+      assert.ok(
+        v17Plan.allocations.every(
+          (a: any) =>
+            a.leverage_cap <= 5 && a.loss_policy === "pause_then_exit",
+        ),
+      );
+      return {
+        count: 4,
+        copy_mode: v17Plan.allocations[0].copy_mode,
+        loss_policy: v17Plan.allocations[0].loss_policy,
+      };
+    },
+  );
+  await check("31 推荐批次切换保留编辑方案，免费次数不会重置", async () => {
+    const edited = await ok(v17.client, "recalculate_plan", {
+      plan_id: v17Plan.id,
+      preferences: v17Pref,
+      allocations: v17Plan.allocations.map((a: any) => ({
+        trader_id: a.trader.id,
+        amount_usdc: "100",
+        leverage_cap: 3,
+        stop_loss_pct: 25,
+        loss_policy: "pause_then_exit",
+        emergency_exit_pct: 70,
+      })),
+    });
+    v17Plan = edited.data.plan;
+    const next = await ok(v17.client, "recommend_traders", {
+      preferences: v17Pref,
+      batch_action: "next",
+    });
+    assert.equal(next.data.plan.id, v17Plan.id);
+    const repeated = await tool(v17.client, "recommend_traders", {
+      preferences: v17Pref,
+      batch_action: "next",
+    });
+    assert.equal(repeated.error?.code, "BATCH_LIMIT");
+    const original = await ok(v17.client, "recommend_traders", {
+      preferences: v17Pref,
+      batch_action: "saved",
+      batch_index: 0,
+    });
+    assert.equal(original.data.plan.id, v17Plan.id);
+    return { plan_preserved: true, quota_enforced: true };
+  });
+  await check("32 兼容性确认绑定当前方案，确认前不下单", async () => {
+    const q = await ok(v17.client, "start_copy", {
+      plan_id: v17Plan.id,
+      compatibility_ack:(await import("../src/agent/conversational.js")).compatibility(v17Plan).fingerprint,
+    });
+    assert.equal(q.status, "requires_confirmation");
+    return { requires_human_confirmation: true };
+  });
+  await check(
+    "33 充值渠道、所属账户地址和二维码、到账查询经真实 MCP",
+    async () => {
+      const routes = await ok(v17.client, "get_deposit_options", {});
+      assert.ok(routes.data.deposit_options.routes.length);
+      const address = await ok(v17.client, "get_deposit_address", {
+        market: "perps",
+        asset: "USDC",
+        network: "Arbitrum",
+      });
+      v17Deposit = address.data.deposit;
+      assert.ok(v17Deposit.qr_data_url.startsWith("data:image/png;base64,"));
+      const state = await ok(v17.client, "check_deposit_status", {
+        deposit_id: v17Deposit.id,
+      });
+      assert.equal(state.data.deposit_status.available_to_copy, false);
+      const foreign = await tool(alice.client, "check_deposit_status", {
+        deposit_id: v17Deposit.id,
+      });
+      assert.equal(foreign.error?.code, "NOT_FOUND");
+      return {
+        qr_generated: true,
+        other_account_rejected: true,
+        copy_ready: false,
+      };
+    },
+  );
+  await check(
+    "34 单个 trader 和 Fixed 参数经 MCP 冻结，不改变已有组合",
+    async () => {
+      const single = await oauth("v17Single");
+      const response = await ok(single.client, "recommend_traders", {
+        preferences: {
+          ...v17Pref,
+          portfolio_kind: "single",
+          basket_size: 1,
+          copy_mode: "fixed",
+          fixed_margin_usdc: "10",
+        },
+        trader_ids: [venue.pool[0].id],
+      });
+      const plan = response.data.plan;
+      assert.equal(plan.allocations.length, 1);
+      assert.equal(plan.allocations[0].fixed_margin_usdc, "10.000000");
+      const q = await ok(single.client, "start_copy", { plan_id: plan.id });
+      assert.equal(q.status, "requires_confirmation");
+      return { single_trader: true, fixed_margin_frozen: true };
+    },
+  );
+  await check("35 新充值与日报 CLI 命令使用相同 HTTP 合约", async () => {
+    const r = await cli(["deposit", "options"]);
+    assert.ok(r.data.deposit_options.routes.length);
+    const daily = await cli(["daily", "--timezone", "Asia/Shanghai"]);
+    assert.ok(daily.data.daily_checkin);
+    return { cli_contracts: true };
+  });
 } catch (e) {
   results.push({
     name: "Harness startup or critical journey prerequisite",

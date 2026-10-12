@@ -165,6 +165,16 @@ export async function invokeAgent(
 }
 function description(name: ToolName): string {
   const descriptions: Record<ToolName, string> = {
+    get_deposit_options:
+      "Read currently supported funding routes. No funds are transferred.",
+    get_deposit_address:
+      "Create an owned funding request and verified receiving address/QR for the chosen supported network. No transfer or signing is performed.",
+    check_deposit_status:
+      "Read an account-owned deposit request. Wallet receipt, bridge settlement and copy-ready funds remain separate.",
+    get_daily_checkin:
+      "Offer one portfolio performance review per local day and timezone; does not send a message or notification.",
+    update_portfolio:
+      "Propose changing the owned portfolio loss threshold; requires Ride confirmation and cannot unlatch a triggered stop.",
     set_preferences:
       "Save budget, loss trigger and market preferences. Existing portfolios are unchanged.",
     recalculate_plan:

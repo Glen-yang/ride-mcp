@@ -54,6 +54,11 @@ export const configAt = (s: Sleeve) => ({
   amount_usdc: s.amount_usdc,
   leverage_cap: s.leverage_cap,
   stop_loss_pct: s.stop_loss_pct,
+  copy_mode: s.copy_mode ?? "ride_recommends",
+  fixed_margin_usdc: s.fixed_margin_usdc ?? null,
+  proportional_multiplier: s.proportional_multiplier ?? 1,
+  loss_policy: s.loss_policy ?? "exit",
+  emergency_exit_pct: s.emergency_exit_pct ?? null,
 });
 export function recordConfigurations(p: Portfolio): void {
   const history = (p.configurations ??= []);
@@ -145,6 +150,20 @@ export function performanceView(state: State, p: Portfolio, period: string) {
       ? cash(D(last!.net_profit_usdc!).minus(baseline!.net_profit_usdc!))
       : null,
     inception_net_profit_usdc: pnl(p).net_usdc,
+    recent_fills: (p.receipts ?? [])
+      .filter((r) => r.fill.at >= start && r.fill.at < end)
+      .slice(-40)
+      .map((r) => ({
+        copy_id: r.copy_id,
+        trader:
+          p.sleeves.find((s) => s.copy_id === r.copy_id)?.trader.handle ?? null,
+        at: r.fill.at,
+        asset: r.fill.key,
+        quantity: r.quantity,
+        price: r.fill.price,
+        fee_usdc: r.fee_usdc,
+        realized_usdc: r.realized_usdc,
+      })),
     points: [
       ...new Map(
         points.map((x) => [new Date(x.at).toISOString().slice(0, 10), x]),

@@ -229,6 +229,28 @@ summary {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
+
+.performance-chart svg {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+.deposit-qr {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: 16px auto;
+}
+.deposit-address {
+  display: block;
+  overflow-wrap: anywhere;
+  padding: 12px;
+  background: #f5f3ec;
+  border-radius: 8px;
+}
+.field input[type="checkbox"] {
+  width: auto;
+}
 </style></head><body><main><header><div class="brand"><span>ride</span> / confirmation</div><span class="tag">Human approval</span></header><div id="login" class="card"><h1>Sign in to review your proposal</h1><p class="muted">Ride verifies your account before displaying or confirming changes.</p><label>Access code, if required<input id="access-code" autocomplete="off"></label><button id="sign-in">Continue with Google</button></div><div id="status" aria-live="polite"></div><div id="content"></div><div id="actions" class="actions" hidden><button id="approve">Confirm these parameters</button><button id="reject" class="secondary">Reject proposal</button></div></main><script type="module">/*INLINE_VIEW*/const el = (tag, text, cls) => {
   const node = document.createElement(tag);
   if (text !== undefined && text !== null) node.textContent = String(text);
@@ -254,7 +276,12 @@ const sumCash = (amounts) => {
   }, 0n);
   return `${n / 1000000n}.${String(n % 1000000n).padStart(6, "0")}`;
 };
-function sleeveCards(sleeves, callTool) {
+function sleeveCards(
+  sleeves,
+  callTool,
+  addTrader,
+  actionLabel = "Add to basket",
+) {
   const grid = el("div", null, "grid");
   for (const s of sleeves) {
     const c = card(s.trader?.handle ?? s.copy_id);
@@ -262,8 +289,20 @@ function sleeveCards(sleeves, callTool) {
       el("span", `${s.trader?.market ?? ""} · ${s.trader?.style ?? ""}`, "tag"),
       row("Copy Score", s.trader?.score),
       row("Allocation", usdc(s.amount_usdc)),
-      row("Leverage cap", `${s.leverage_cap}x`),
-      row("Sleeve loss trigger", `${s.stop_loss_pct}%`),
+      row("Leverage cap", s.leverage_cap == null ? null : `${s.leverage_cap}x`),
+      row(
+        s.loss_policy === "pause_then_exit"
+          ? "Pause new exposure"
+          : "Sleeve exit trigger",
+        s.stop_loss_pct == null ? null : `${s.stop_loss_pct}%`,
+      ),
+      row("Copy mode", s.copy_mode ?? "Ride recommended"),
+      ...(s.copy_mode === "fixed"
+        ? [row("Fixed margin per source entry", usdc(s.fixed_margin_usdc))]
+        : []),
+      ...(s.loss_policy === "pause_then_exit"
+        ? [row("Emergency exit", `${s.emergency_exit_pct ?? 70}%`)]
+        : []),
     );
     if (s.state)
       c.append(
@@ -276,6 +315,11 @@ function sleeveCards(sleeves, callTool) {
         callTool("get_trader_profile", { trader_id: s.trader.id }),
       );
       c.append(b);
+    }
+    if (addTrader && s.amount_usdc == null) {
+      const add = el("button", actionLabel, "secondary");
+      add.addEventListener("click", () => addTrader(s.trader));
+      c.append(add);
     }
     grid.append(c);
   }
@@ -330,6 +374,59 @@ function render(root, value, openLink = () => {}, callTool = () => {}) {
     root.append(el("p", value.error.message, "warning error"));
     return;
   }
+  if (d.deposit_options)
+    renderDepositOptions(root, d.deposit_options, callTool);
+  if (d.deposit) renderDeposit(root, d.deposit, callTool);
+  if (d.deposit_status) {
+    const c = card("Deposit status");
+    c.append(
+      row("Status", d.deposit_status.status),
+      row("Available to copy", d.deposit_status.available_to_copy),
+      el("p", d.deposit_status.next_action, "muted"),
+    );
+    const check = el("button", "Check again", "secondary");
+    check.addEventListener("click", () =>
+      callTool("check_deposit_status", {
+        deposit_id: d.deposit_status.deposit_id,
+      }),
+    );
+    c.append(check);
+    if (d.saved_plan_id) {
+      const resume = el("button", "Refresh saved plan and review");
+      resume.addEventListener("click", () =>
+        callTool("recalculate_plan", { plan_id: d.saved_plan_id }),
+      );
+      c.append(resume);
+    }
+    root.append(c);
+  }
+  if (d.daily_checkin) {
+    const c = card(
+      d.daily_checkin.offer_review
+        ? "Welcome back · daily portfolio review"
+        : "Today’s check-in",
+    );
+    c.append(
+      el(
+        "p",
+        d.daily_checkin.offer_review
+          ? "Would you like to review the last 24 hours?"
+          : "Your daily check-in has already been offered, or no Agent portfolio is active.",
+        "muted",
+      ),
+    );
+    if (d.daily_checkin.offer_review) {
+      const b = el("button", "Review performance");
+      b.addEventListener("click", () =>
+        callTool("get_performance", {
+          portfolio_id: d.daily_checkin.portfolio_id,
+          period: "daily",
+        }),
+      );
+      c.append(b);
+    }
+    root.append(c);
+  }
   if (d.preferences) welcome(root, callTool, d.preferences);
   if (d.plan) {
     const plan = d.plan;
@@ -368,12 +465,22 @@ function render(root, value, openLink = () => {}, callTool = () => {}) {
     const start = el("button", "Review start proposal");
     start.disabled = plan.expires_at <= Date.now();
     start.addEventListener("click", () =>
-      callTool("start_copy", { plan_id: plan.id }),
+      callTool("start_copy", {
+        plan_id: plan.id,
+        ...(start.dataset.compatibility
+          ? { compatibility_ack: start.dataset.compatibility }
+          : {}),
+      }),
     );
     const refresh = el("button", "Refresh saved plan", "secondary");
     refresh.addEventListener("click", () =>
-      callTool("recalculate_plan", { plan_id: plan.id }),
+      callTool("recalculate_plan", {
+        plan_id: plan.id,
+        preferences: plan.preferences,
+      }),
     );
+    renderBatches(root, plan, d, callTool);
+    renderCompatibility(root, plan, d, callTool, start);
     root.append(planEditor(plan, d, callTool, start));
     if (d.query_scope !== "agent_portfolio_and_ride_app")
       root.append(
@@ -384,12 +491,16 @@ function render(root, value, openLink = () => {}, callTool = () => {}) {
         ),
       );
     const actions = el("div", null, "actions");
-    actions.append(start, refresh);
+    const deposit = el("button", "Deposit into Ride", "secondary");
+    deposit.addEventListener("click", () =>
+      callTool("get_deposit_options", {}),
+    );
+    actions.append(start, refresh, deposit);
     root.append(actions);
     root.append(
       el(
         "p",
-        "Perps recommendations use 3–8× risk caps; prediction uses 1×. Each sleeve defaults to a 30% loss trigger that initiates exits. RWA is an asset category.",
+        "Leverage follows the selected risk tolerance and verified venue limits. A single-trader plan is concentrated. Review each trader’s pause/exit rules before confirming.",
         "muted",
       ),
     );
@@ -409,6 +520,24 @@ function render(root, value, openLink = () => {}, callTool = () => {}) {
       row("Allocated funds", usdc(p.allocated_usdc)),
       row("Accounting", p.reconciliation),
     );
+    const portfolioStop = field(
+      overview,
+      "Portfolio loss trigger · %",
+      "number",
+      p.preferences.loss_trigger_pct,
+    );
+    const changeStop = el(
+      "button",
+      "Review portfolio stop change",
+      "secondary",
+    );
+    changeStop.addEventListener("click", () =>
+      callTool("update_portfolio", {
+        portfolio_id: p.id,
+        loss_trigger_pct: Number(portfolioStop.value),
+      }),
+    );
+    overview.append(changeStop);
     root.append(overview, sleeveCards(p.sleeves, callTool));
     const actions = el("div", null, "actions");
     for (const [label, name, args] of [
@@ -470,6 +599,85 @@ function render(root, value, openLink = () => {}, callTool = () => {}) {
         );
         controls.append(close);
       }
+      const margin = field(
+          controls,
+          "Allocation · USDC",
+          "text",
+          s.amount_usdc,
+        ),
+        leverage = field(controls, "Leverage cap", "number", s.leverage_cap),
+        pause = field(
+          controls,
+          "Trader pause/exit threshold · %",
+          "number",
+          s.stop_loss_pct,
+        );
+      const mode = select(
+        controls,
+        "Copy mode",
+        [
+          ["ride_recommends", "Ride recommended"],
+          ["fixed", "Fixed margin"],
+          ["proportional", "Proportional"],
+        ],
+        s.copy_mode ?? "ride_recommends",
+      );
+      const fixed = field(
+          controls,
+          "Fixed margin per source entry · USDC",
+          "text",
+          s.fixed_margin_usdc ?? "10",
+        ),
+        multiplier = field(
+          controls,
+          "Proportional multiplier",
+          "number",
+          s.proportional_multiplier ?? 1,
+        );
+      const lossPolicy = select(
+          controls,
+          "Trader loss policy",
+          [
+            ["exit", "Exit at threshold"],
+            ["pause_then_exit", "Pause, then emergency exit"],
+          ],
+          s.loss_policy ?? "exit",
+        ),
+        emergency = field(
+          controls,
+          "Emergency exit threshold · %",
+          "number",
+          s.emergency_exit_pct ?? 70,
+        );
+      const edit = el("button", "Review parameter change", "secondary");
+      edit.disabled = s.state === "closed";
+      edit.addEventListener("click", () =>
+        callTool("update_copy", {
+          copy_id: s.copy_id,
+          amount_usdc: margin.value.trim(),
+          leverage_cap: Number(leverage.value),
+          stop_loss_pct: Number(pause.value),
+          copy_mode: mode.value,
+          ...(mode.value === "fixed"
+            ? { fixed_margin_usdc: fixed.value.trim() }
+            : { proportional_multiplier: Number(multiplier.value) }),
+          loss_policy: lossPolicy.value,
+          ...(lossPolicy.value === "pause_then_exit"
+            ? { emergency_exit_pct: Number(emergency.value) }
+            : {}),
+        }),
+      );
+      controls.append(edit);
+      if (s.state === "risk_off") {
+        const resume = el("button", "Review resuming new trades", "secondary");
+        resume.addEventListener("click", () =>
+          callTool("update_copy", {
+            copy_id: s.copy_id,
+            resume_new_trades: true,
+          }),
+        );
+        controls.append(resume);
+      }
       root.append(controls);
     }
     for (const s of p.sleeves.filter((s) => s.state === "active")) {
@@ -516,6 +724,35 @@ function render(root, value, openLink = () => {}, callTool = () => {}) {
           : `${t.source_drawdown_pct}%`,
       ),
     );
+    const single = el("button", "Copy this trader only", "secondary");
+    single.addEventListener("click", () => {
+      root.replaceChildren();
+      welcome(
+        root,
+        (name, args) =>
+          callTool(
+            name,
+            name === "recommend_traders"
+              ? { ...args, trader_ids: [t.id], batch_action: undefined }
+              : args,
+          ),
+        {
+          portfolio_kind: "single",
+          basket_size: 1,
+          market: t.market,
+          assets: t.assets,
+          asset_category: t.asset_category === "rwa" ? "rwa" : "crypto",
+        },
+      );
+    });
+    profile.append(single);
+    if (d.saved_plan && d.saved_plan.preferences.portfolio_kind !== "single") {
+      const add = el("button", "Add to saved basket", "secondary");
+      add.addEventListener("click", () =>
+        addToPlan(d.saved_plan, t, {}, callTool),
+      );
+      profile.append(add);
+    }
     root.append(
       profile,
       el(
@@ -677,9 +914,73 @@ function welcome(root, callTool, pref = {}) {
     ],
     String(pref.allow_altcoins ?? false),
   );
+  const kind = select(
+    form,
+    "Portfolio type",
+    [
+      ["basket", "Auto-Ride basket · 2–8 traders"],
+      ["single", "One trader"],
+    ],
+    pref.portfolio_kind ?? "basket",
+  );
+  const size = field(form, "Basket size", "number", pref.basket_size ?? 4);
+  size.min = "2";
+  size.max = "8";
+  const tolerance = select(
+    form,
+    "Risk tolerance",
+    [
+      ["low", "Low"],
+      ["medium", "Medium"],
+      ["high", "High"],
+    ],
+    pref.risk_tolerance ?? "medium",
+  );
+  const category = select(
+    form,
+    "Asset category",
+    [
+      ["crypto", "Crypto"],
+      ["rwa", "Stocks and other RWA"],
+      ["any", "No strong preference"],
+    ],
+    pref.asset_category ?? "crypto",
+  );
+  const mode = select(
+    form,
+    "Copy mode",
+    [
+      ["ride_recommends", "Let Ride recommend"],
+      ["fixed", "Fixed margin per source entry"],
+      ["proportional", "Proportional"],
+    ],
+    pref.copy_mode ?? "ride_recommends",
+  );
+  const fixed = field(
+    form,
+    "Fixed margin · USDC",
+    "text",
+    pref.fixed_margin_usdc ?? "10",
+  );
+  const multiplier = field(
+    form,
+    "Proportional multiplier",
+    "number",
+    pref.proportional_multiplier ?? 1,
+  );
+  const policy = select(
+    form,
+    "Trader loss policy",
+    [
+      ["pause_then_exit", "Pause at 30%, exit at 70%"],
+      ["exit", "Exit at trader threshold"],
+    ],
+    pref.loss_policy ?? "pause_then_exit",
+  );
   const b = el("button", "View traders first");
   b.addEventListener("click", () =>
     callTool("recommend_traders", {
+      batch_action: "first",
       preferences: {
         budget_usdc: budget.value.trim(),
         loss_trigger_pct: Number(loss.value),
@@ -689,13 +990,33 @@ function welcome(root, callTool, pref = {}) {
           .map((v) => v.trim().toUpperCase())
           .filter(Boolean),
         allow_altcoins: alt.value === "true",
+        portfolio_kind: kind.value,
+        basket_size: kind.value === "single" ? 1 : Number(size.value),
+        risk_tolerance: tolerance.value,
+        asset_category: category.value,
+        copy_mode: mode.value,
+        ...(mode.value === "fixed"
+          ? { fixed_margin_usdc: fixed.value.trim() }
+          : { proportional_multiplier: Number(multiplier.value) }),
+        loss_policy: policy.value,
+        ...(policy.value === "pause_then_exit"
+          ? { emergency_exit_pct: 70 }
+          : {}),
       },
     }),
   );
   const resume = el("button", "Resume saved plan", "secondary");
   resume.addEventListener("click", () => callTool("get_portfolio", {}));
   const actions = el("div", null, "actions");
-  actions.append(b, resume);
+  const deposit = el("button", "Deposit into Ride", "secondary");
+  deposit.addEventListener("click", () => callTool("get_deposit_options", {}));
+  const checkin = el("button", "Daily portfolio check-in", "secondary");
+  checkin.addEventListener("click", () =>
+    callTool("get_daily_checkin", {
+      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+    }),
+  );
+  actions.append(b, resume, deposit, checkin);
   form.append(
     actions,
     el(
@@ -707,7 +1028,11 @@ function welcome(root, callTool, pref = {}) {
   root.append(form);
 }
 function planEditor(plan, data, callTool, start) {
-  const c = card("Adjust your basket · 3–6 traders"),
+  const c = card(
+      plan.preferences.portfolio_kind === "single"
+        ? "Adjust your trader"
+        : "Adjust your basket",
+    ),
     rows = el("div", null, "grid"),
     editors = [];
   const candidates = data.candidates ?? plan.allocations.map((a) => a.trader);
@@ -715,6 +1040,7 @@ function planEditor(plan, data, callTool, start) {
     (data.candidate_limits ?? []).map((x) => [x.trader_id, x.leverage_cap]),
   );
   const dirty = () => {
+    start.dataset.dirty = "true";
     start.disabled = true;
     note.textContent = "Changes need recalculation before you can start.";
   };
@@ -742,7 +1068,55 @@ function planEditor(plan, data, callTool, start) {
     const loss = field(r, "Sleeve loss trigger · %", "number", a.stop_loss_pct);
     loss.min = "1";
     loss.max = "100";
-    const editor = { r, trader, amount, leverage, loss };
+    const mode = select(
+        r,
+        "Copy mode",
+        [
+          ["ride_recommends", "Ride recommended"],
+          ["fixed", "Fixed margin"],
+          ["proportional", "Proportional"],
+        ],
+        a.copy_mode ?? "ride_recommends",
+      ),
+      fixed = field(
+        r,
+        "Fixed margin · USDC",
+        "text",
+        a.fixed_margin_usdc ?? "10",
+      ),
+      multiplier = field(
+        r,
+        "Proportional multiplier",
+        "number",
+        a.proportional_multiplier ?? 1,
+      ),
+      policy = select(
+        r,
+        "Loss policy",
+        [
+          ["exit", "Exit at threshold"],
+          ["pause_then_exit", "Pause then emergency exit"],
+        ],
+        a.loss_policy ?? "exit",
+      ),
+      emergency = field(
+        r,
+        "Emergency exit · %",
+        "number",
+        a.emergency_exit_pct ?? 70,
+      );
+    const editor = {
+      r,
+      trader,
+      amount,
+      leverage,
+      loss,
+      mode,
+      fixed,
+      multiplier,
+      policy,
+      emergency,
+    };
     editors.push(editor);
     r.addEventListener("input", dirty);
     trader.addEventListener("change", () => {
@@ -753,8 +1127,15 @@ function planEditor(plan, data, callTool, start) {
     });
     const remove = el("button", "Remove", "secondary");
     remove.addEventListener("click", () => {
-      if (editors.length <= 3) {
-        note.textContent = "Keep at least three traders.";
+      if (
+        editors.length <=
+        (plan.preferences.portfolio_kind === "single"
+          ? 1
+          : plan.preferences.portfolio_kind === "basket"
+            ? 2
+            : 3)
+      ) {
+        note.textContent = "Keep the minimum number of traders for this plan.";
         return;
       }
       editors.splice(editors.indexOf(editor), 1);
@@ -768,8 +1149,15 @@ function planEditor(plan, data, callTool, start) {
   c.append(rows);
   const plus = el("button", "Add another trader", "secondary");
   plus.addEventListener("click", () => {
-    if (editors.length >= 6) {
-      note.textContent = "The basket supports at most six traders.";
+    if (
+      editors.length >=
+      (plan.preferences.portfolio_kind === "single"
+        ? 1
+        : plan.preferences.portfolio_kind === "basket"
+          ? 8
+          : 6)
+    ) {
+      note.textContent = "This plan has reached its trader limit.";
       return;
     }
     const trader = candidates.find(
@@ -791,11 +1179,20 @@ function planEditor(plan, data, callTool, start) {
   recalc.addEventListener("click", () =>
     callTool("recalculate_plan", {
       plan_id: plan.id,
+      preferences: plan.preferences,
       allocations: editors.map((e) => ({
         trader_id: e.trader.value,
         amount_usdc: e.amount.value.trim(),
         leverage_cap: Number(e.leverage.value),
         stop_loss_pct: Number(e.loss.value),
+        copy_mode: e.mode.value,
+        ...(e.mode.value === "fixed"
+          ? { fixed_margin_usdc: e.fixed.value.trim() }
+          : { proportional_multiplier: Number(e.multiplier.value) }),
+        loss_policy: e.policy.value,
+        ...(e.policy.value === "pause_then_exit"
+          ? { emergency_exit_pct: Number(e.emergency.value) }
+          : {}),
       })),
     }),
   );
@@ -853,6 +1250,20 @@ function renderPerformance(root, p, callTool) {
     actions.append(b);
   }
   c.append(actions);
+  const chart = el("div", null, "performance-chart");
+  const chartActions = el("div", null, "actions");
+  for (const [metric, label] of [
+    ["net_profit_usdc", "Cumulative net profit"],
+    ["account_value_usdc", "Account value"],
+  ]) {
+    const button = el("button", label, "secondary");
+    button.addEventListener("click", () =>
+      drawPerformance(chart, p.points, metric, label),
+    );
+    chartActions.append(button);
+  }
+  c.append(chartActions, chart);
+  drawPerformance(chart, p.points, "net_profit_usdc", "Cumulative net profit");
   table(
     c,
     ["Observed at", "Net profit · USDC", "Accounting"],
@@ -869,6 +1280,28 @@ function renderPerformance(root, p, callTool) {
       ["Historical copy", "State", "Net contribution · USDC"],
       latest.sleeves.map((s) => [s.handle, s.state, s.net_profit_usdc]),
     );
+  if (p.recent_fills?.length)
+    table(
+      c,
+      [
+        "Time",
+        "Trader",
+        "Asset",
+        "Quantity",
+        "Fill price",
+        "Realized · USDC",
+        "Fee · USDC",
+      ],
+      p.recent_fills.map((f) => [
+        new Date(f.at).toLocaleString(),
+        f.trader,
+        f.asset,
+        f.quantity,
+        f.price,
+        f.realized_usdc,
+        f.fee_usdc,
+      ]),
+    );
   c.append(
     el(
       "p",
@@ -876,6 +1309,377 @@ function renderPerformance(root, p, callTool) {
       "muted",
     ),
   );
+  root.append(c);
+}
+
+function drawPerformance(root, points, metric, label) {
+  root.replaceChildren(el("h3", label));
+  const valid = points.filter(
+    (p) => p[metric] != null && Number.isFinite(Number(p[metric])),
+  );
+  if (!valid.length) {
+    root.append(el("p", "Verified history is unavailable.", "muted"));
+    return;
+  }
+  const ns = "http://www.w3.org/2000/svg",
+    svg = document.createElementNS(ns, "svg");
+  svg.setAttribute("viewBox", "0 0 640 220");
+  svg.setAttribute("role", "img");
+  svg.setAttribute("aria-label", `${label} in USDC`);
+  const min = Math.min(...valid.map((p) => Number(p[metric]))),
+    max = Math.max(...valid.map((p) => Number(p[metric]))),
+    range = Math.max(1, max - min);
+  const first = points[0].at,
+    last = points.at(-1).at,
+    span = Math.max(1, last - first),
+    segments = [];
+  let segment = [];
+  let previous = null;
+  for (const p of points) {
+    if (p[metric] == null || !Number.isFinite(Number(p[metric]))) {
+      if (segment.length) segments.push(segment);
+      segment = [];
+      previous = null;
+      continue;
+    }
+    if (previous && p.at - previous.at > 2 * 86400000) {
+      if (segment.length) segments.push(segment);
+      segment = [];
+    }
+    const x = 62 + ((p.at - first) / span) * 558,
+      y = 178 - ((Number(p[metric]) - min) / range) * 140;
+    segment.push([x, y]);
+    previous = p;
+    const dot = document.createElementNS(ns, "circle");
+    dot.setAttribute("cx", x);
+    dot.setAttribute("cy", y);
+    dot.setAttribute("r", "3");
+    dot.setAttribute("fill", "#8c740c");
+    const title = document.createElementNS(ns, "title");
+    title.textContent = `${new Date(p.at).toLocaleDateString()}: ${p[metric]} USDC`;
+    dot.append(title);
+    svg.append(dot);
+  }
+  if (segment.length) segments.push(segment);
+  for (const values of segments) {
+    const path = document.createElementNS(ns, "polyline");
+    path.setAttribute("points", values.map((v) => v.join(",")).join(" "));
+    path.setAttribute("fill", "none");
+    path.setAttribute("stroke", "#c3a017");
+    path.setAttribute("stroke-width", "2");
+    svg.append(path);
+  }
+  for (const [value, y] of [
+    [max, 38],
+    [min, 178],
+  ]) {
+    const text = document.createElementNS(ns, "text");
+    text.setAttribute("x", "4");
+    text.setAttribute("y", y);
+    text.setAttribute("font-size", "11");
+    text.textContent = value.toFixed(2);
+    svg.append(text);
+  }
+  root.append(
+    svg,
+    el(
+      "p",
+      metric === "account_value_usdc"
+        ? "Account value includes external funding. Use net profit to assess trading performance."
+        : "Net profit excludes external deposits and withdrawals. Missing periods remain gaps.",
+      "muted",
+    ),
+  );
+}
+
+function renderCompatibility(root, plan, data, callTool, start) {
+  const report = data.compatibility;
+  if (!report) return;
+  const c = card("Portfolio compatibility check");
+  c.append(
+    row("Overlap flags", report.warnings),
+    el("p", report.missing_evidence, "muted"),
+  );
+  table(
+    c,
+    ["Traders", "Shared assets", "Same direction", "Similar holding period"],
+    report.pairs.map((p) => [
+      p.traders
+        .map(
+          (id) =>
+            plan.allocations.find((a) => a.trader.id === id)?.trader.handle ??
+            id,
+        )
+        .join(" / "),
+      p.shared_assets.join(" / "),
+      p.same_direction,
+      p.similar_holding_period,
+    ]),
+  );
+  if (report.warnings && plan.preferences.portfolio_kind) {
+    const ack = field(
+      c,
+      "Keep this selection after reviewing its overlap warnings",
+      "checkbox",
+      "",
+    );
+    start.disabled = true;
+    ack.addEventListener("change", () => {
+      start.disabled =
+        !ack.checked ||
+        start.dataset.dirty === "true" ||
+        plan.expires_at <= Date.now();
+    });
+    start.dataset.compatibility = report.fingerprint;
+  }
+  for (const suggestion of data.alternatives ?? []) {
+    const b = el(
+      "button",
+      `Replace ${plan.allocations.find((a) => a.trader.id === suggestion.outgoing_trader_id)?.trader.handle} with ${suggestion.incoming_trader.handle} · ${suggestion.fewer_flags} fewer flags`,
+      "secondary",
+    );
+    b.addEventListener("click", () =>
+      callTool("recalculate_plan", {
+        plan_id: plan.id,
+        preferences: plan.preferences,
+        allocations: plan.allocations.map((a) => ({
+          trader_id:
+            a.trader.id === suggestion.outgoing_trader_id
+              ? suggestion.incoming_trader.id
+              : a.trader.id,
+          amount_usdc: a.amount_usdc,
+          leverage_cap: a.leverage_cap,
+          stop_loss_pct: a.stop_loss_pct,
+          ...copyParameters(a),
+        })),
+      }),
+    );
+    c.append(b);
+  }
+  root.append(c);
+}
+const copyParameters = (a) =>
+  Object.fromEntries(
+    [
+      "copy_mode",
+      "fixed_margin_usdc",
+      "proportional_multiplier",
+      "loss_policy",
+      "emergency_exit_pct",
+    ]
+      .filter((k) => a[k] != null)
+      .map((k) => [k, a[k]]),
+  );
+
+function renderBatches(root, plan, data, callTool) {
+  const batches = data.recommendation_batches;
+  if (!batches) return;
+  const c = card("Saved recommendation batches"),
+    actions = el("div", null, "actions");
+  batches.batches.forEach((_, index) => {
+    const b = el(
+      "button",
+      `Batch ${index + 1}${batches.active_index === index ? " · current" : ""}`,
+      "secondary",
+    );
+    b.addEventListener("click", () =>
+      callTool("recommend_traders", {
+        preferences: plan.preferences,
+        batch_action: "saved",
+        batch_index: index,
+      }),
+    );
+    actions.append(b);
+  });
+  const next = el(
+    "button",
+    batches.preview_quota_applies === false
+      ? "View another batch"
+      : batches.change_used
+        ? "Free batch change used"
+        : "Change a batch · one free change",
+    "secondary",
+  );
+  next.disabled =
+    batches.change_used && batches.preview_quota_applies !== false;
+  next.addEventListener("click", () =>
+    callTool("recommend_traders", {
+      preferences: plan.preferences,
+      batch_action: "next",
+    }),
+  );
+  actions.append(next);
+  c.append(
+    actions,
+    el(
+      "p",
+      "Your current plan stays saved. Switching a batch does not activate or change copying.",
+      "muted",
+    ),
+  );
+  if (batches.displayed_candidates)
+    c.append(
+      sleeveCards(
+        batches.displayed_candidates.map((trader) => ({
+          trader,
+          amount_usdc: null,
+          leverage_cap: null,
+          stop_loss_pct: null,
+        })),
+        callTool,
+        (trader) => addToPlan(plan, trader, data, callTool),
+        plan.preferences.portfolio_kind === "single"
+          ? "Use this trader"
+          : "Add to basket",
+      ),
+    );
+  root.append(c);
+}
+
+function addToPlan(plan, trader, data, callTool) {
+  if (plan.allocations.some((a) => a.trader.id === trader.id)) return;
+  if (plan.preferences.portfolio_kind === "single") {
+    const allocation = plan.allocations[0];
+    const limit =
+      data.candidate_limits?.find((x) => x.trader_id === trader.id)
+        ?.leverage_cap ?? 1;
+    callTool("recalculate_plan", {
+      plan_id: plan.id,
+      preferences: plan.preferences,
+      allocations: [
+        {
+          trader_id: trader.id,
+          amount_usdc: allocation.amount_usdc,
+          leverage_cap: Math.min(allocation.leverage_cap, limit),
+          stop_loss_pct: allocation.stop_loss_pct,
+          ...copyParameters(allocation),
+        },
+      ],
+    });
+    return;
+  }
+  const max =
+    plan.preferences.portfolio_kind === "single"
+      ? 1
+      : plan.preferences.portfolio_kind === "basket"
+        ? 8
+        : 6;
+  if (plan.allocations.length >= max) return;
+  const values = [
+    ...plan.allocations,
+    {
+      trader,
+      leverage_cap:
+        data.candidate_limits?.find((x) => x.trader_id === trader.id)
+          ?.leverage_cap ?? (trader.market === "prediction" ? 1 : 3),
+      stop_loss_pct: 30,
+      ...copyParameters(plan.preferences),
+    },
+  ];
+  const [whole, fraction = ""] = String(plan.preferences.budget_usdc).split(
+      ".",
+    ),
+    total = BigInt(whole) * 1000000n + BigInt(fraction.padEnd(6, "0")),
+    count = BigInt(values.length),
+    base = total / count,
+    remainder = total % count;
+  callTool("recalculate_plan", {
+    plan_id: plan.id,
+    preferences: plan.preferences,
+    allocations: values.map((a, i) => {
+      const amount = base + (BigInt(i) < remainder ? 1n : 0n);
+      return {
+        trader_id: a.trader.id,
+        amount_usdc: `${amount / 1000000n}.${String(amount % 1000000n).padStart(6, "0")}`,
+        leverage_cap: a.leverage_cap,
+        stop_loss_pct: a.stop_loss_pct,
+        ...copyParameters(a),
+      };
+    }),
+  });
+}
+
+function renderDepositOptions(root, options, callTool) {
+  const c = card("Deposit into your Ride account");
+  const market = select(
+    c,
+    "Destination",
+    [
+      ["perps", "Trading account"],
+      ["prediction", "Prediction account"],
+    ],
+    "perps",
+  );
+  const asset = select(
+    c,
+    "Asset",
+    [
+      ["USDC", "USDC"],
+      ["USDT", "USDT"],
+    ],
+    "USDC",
+  );
+  const network = select(c, "Network", [], "");
+  const update = () => {
+    network.replaceChildren();
+    for (const route of options.routes.filter(
+      (r) => r.market === market.value && r.asset === asset.value,
+    )) {
+      const o = el("option", route.network);
+      o.value = route.network;
+      network.append(o);
+    }
+    b.disabled = !network.options.length;
+    note.textContent = network.options.length
+      ? "Only currently supported routes are shown."
+      : "No verified route for this account and asset. Choose another option.";
+  };
+  const amount = field(
+    c,
+    "Amount · optional, used for minimum checks",
+    "text",
+    "",
+  );
+  const b = el("button", "Get my deposit address and QR"),
+    note = el("p", null, "muted");
+  b.addEventListener("click", () =>
+    callTool("get_deposit_address", {
+      market: market.value,
+      asset: asset.value,
+      network: network.value,
+      ...(amount.value.trim() ? { amount_usdc: amount.value.trim() } : {}),
+    }),
+  );
+  market.addEventListener("change", update);
+  asset.addEventListener("change", update);
+  update();
+  c.append(note, b);
+  for (const n of options.notes ?? []) c.append(el("p", n, "muted"));
+  root.append(c);
+}
+function renderDeposit(root, deposit, callTool) {
+  const c = card(`Deposit ${deposit.asset} · ${deposit.network}`);
+  c.append(
+    row("Destination", deposit.destination),
+    row("Network", deposit.network),
+    row("Asset", deposit.asset),
+  );
+  const image = el("img");
+  image.alt = `Receiving address QR for ${deposit.asset} on ${deposit.network}`;
+  image.width = 240;
+  image.height = 240;
+  image.src = deposit.qr_data_url;
+  image.className = "deposit-qr";
+  c.append(
+    image,
+    el("code", deposit.address, "deposit-address"),
+    el("p", deposit.instructions, "warning"),
+  );
+  const b = el("button", "Check deposit status");
+  b.addEventListener("click", () =>
+    callTool("check_deposit_status", { deposit_id: deposit.id }),
+  );
+  c.append(b);
   root.append(c);
 }
 function renderDiagnostic(root, d) {

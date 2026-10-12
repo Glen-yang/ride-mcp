@@ -229,3 +229,25 @@ summary {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
+
+.performance-chart svg {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+.deposit-qr {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: 16px auto;
+}
+.deposit-address {
+  display: block;
+  overflow-wrap: anywhere;
+  padding: 12px;
+  background: #f5f3ec;
+  border-radius: 8px;
+}
+.field input[type="checkbox"] {
+  width: auto;
+}

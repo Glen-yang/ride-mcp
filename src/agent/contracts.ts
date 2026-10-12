@@ -16,29 +16,69 @@ export const positiveMoney = money.refine(
 );
 export const id = z.string().regex(/^[a-zA-Z0-9_-]{8,100}$/);
 export const market = z.enum(["perps", "prediction", "both"]);
+export const copySettings = {
+  copy_mode: z.enum(["ride_recommends", "fixed", "proportional"]).optional(),
+  fixed_margin_usdc: positiveMoney.optional(),
+  proportional_multiplier: z.number().positive().max(10).optional(),
+  loss_policy: z.enum(["exit", "pause_then_exit"]).optional(),
+  emergency_exit_pct: z.number().min(1).max(100).optional(),
+};
 export const preferences = z
   .object({
     budget_usdc: positiveMoney,
     loss_trigger_pct: z.number().min(1).max(100),
     market: market.default("perps"),
     assets: z
-      .array(z.string().regex(/^[A-Z][A-Z0-9]{0,15}$/))
+      .array(z.string().regex(/^[A-Za-z][A-Za-z0-9:_-]{0,30}$/))
       .max(20)
       .default(["BTC", "ETH"]),
     allow_altcoins: z.boolean().default(false),
+    portfolio_kind: z.enum(["single", "basket"]).optional(),
+    basket_size: z.number().int().min(1).max(8).optional(),
+    risk_tolerance: z.enum(["low", "medium", "high"]).optional(),
+    asset_category: z.enum(["crypto", "rwa", "any"]).optional(),
+    ...copySettings,
   })
   .strict();
 const portfolioInput = z.object({ portfolio_id: id.optional() }).strict();
 export const inputs = {
+  get_deposit_options: z.object({}).strict(),
+  get_deposit_address: z
+    .object({
+      market: z.enum(["perps", "prediction"]),
+      asset: z.enum(["USDC", "USDT"]),
+      network: z.enum(["Arbitrum", "Base", "Ethereum", "Polygon"]),
+      amount_usdc: positiveMoney.optional(),
+    })
+    .strict(),
+  check_deposit_status: z.object({ deposit_id: id }).strict(),
+  get_daily_checkin: z
+    .object({ timezone: z.string().max(80).optional() })
+    .strict(),
+  update_portfolio: z
+    .object({ portfolio_id: id, loss_trigger_pct: z.number().min(1).max(100) })
+    .strict(),
   set_preferences: preferences,
-  recommend_traders: z.object({ preferences: preferences.optional() }).strict(),
+  recommend_traders: z
+    .object({
+      preferences: preferences.optional(),
+      batch_action: z.enum(["first", "next", "saved"]).optional(),
+      batch_index: z.number().int().min(0).max(1).optional(),
+      trader_ids: z.array(id).min(1).max(8).optional(),
+    })
+    .strict(),
   get_trader_profile: z
     .object({
       trader_id: id,
       market: z.enum(["perps", "prediction"]).optional(),
     })
     .strict(),
-  start_copy: z.object({ plan_id: id }).strict(),
+  start_copy: z
+    .object({
+      plan_id: id,
+      compatibility_ack: z.string().length(64).optional(),
+    })
+    .strict(),
   recalculate_plan: z
     .object({
       plan_id: id,
@@ -51,14 +91,22 @@ export const inputs = {
               amount_usdc: positiveMoney,
               leverage_cap: z.number().int().min(1).max(8),
               stop_loss_pct: z.number().min(1).max(100).default(30),
+              ...copySettings,
             })
             .strict(),
         )
-        .min(3)
-        .max(6)
+        .min(1)
+        .max(8)
         .optional(),
     })
-    .strict(),
+    .strict()
+    .refine(
+      (v) =>
+        !v.allocations ||
+        (v.allocations.length >= 3 && v.allocations.length <= 6) ||
+        !!v.preferences?.portfolio_kind,
+      "Use explicit single/basket preferences for the new basket sizes.",
+    ),
   get_performance: z
     .object({
       portfolio_id: id.optional(),
@@ -102,6 +150,8 @@ export const inputs = {
       leverage_cap: z.number().int().min(1).max(8).optional(),
       stop_loss_pct: z.number().min(1).max(100).optional(),
       replacement_trader_id: id.optional(),
+      resume_new_trades: z.boolean().optional(),
+      ...copySettings,
     })
     .strict()
     .refine((v) => Object.keys(v).length > 1, "Specify a change"),
@@ -123,6 +173,7 @@ export const inputs = {
 export type ToolName = keyof typeof inputs;
 export const mutationTools = new Set<ToolName>([
   "start_copy",
+  "update_portfolio",
   "update_copy",
   "stop_copy",
   "close_position",
@@ -133,6 +184,8 @@ export const stateTools = new Set<ToolName>([
   "recalculate_plan",
   "recommend_traders",
   "set_notification_preferences",
+  "get_deposit_address",
+  "get_daily_checkin",
 ]);
 export const TOOL_NAMES = Object.keys(inputs) as ToolName[];
 export const output = z
@@ -212,7 +265,16 @@ export function failure(error: unknown): Result {
 // anywhere, including explanations and nested arrays, instead of leaking them.
 export function publicResult(value: unknown): Result {
   const checked = output.parse(value);
-  if (/0x[a-fA-F0-9]{40}\b/.test(JSON.stringify(checked)))
+  const scan = structuredClone(checked);
+  const own = scan.data.deposit as any;
+  if (
+    own &&
+    /^deposit_[a-f0-9]{32}$/.test(own.id) &&
+    ["wallet", "polymarket_bridge"].includes(own.provider) &&
+    /^0x[a-fA-F0-9]{40}$/.test(own.address)
+  )
+    own.address = "owned deposit address";
+  if (/0x[a-fA-F0-9]{40}\b/.test(JSON.stringify(scan)))
     throw new AgentError(
       "PRIVATE_DATA",
       "Response contained a private trading identity.",

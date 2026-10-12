@@ -1,6 +1,6 @@
 # CLI equivalence
 
-Default output is JSON. Add `--pretty` for human-readable cards/tables. The CLI bin is `ride`; use `npx -y @glenyang/ride-cli@0.3.4` before each command until installed globally. Codex native HTTP MCP credentials are managed by Codex. For standalone CLI use, authenticate separately with `ride login --server https://mcp.onride.me/mcp --trade`. Claude/Cursor setup creates this CLI session automatically.
+Default output is JSON. Add `--pretty` for human-readable cards/tables. The CLI bin is `ride`; use `npx -y @glenyang/ride-cli@0.4.0` before each command until installed globally. Codex native HTTP MCP credentials are managed by Codex. For standalone CLI use, authenticate separately with `ride login --server https://mcp.onride.me/mcp --trade`. Claude/Cursor setup creates this CLI session automatically.
 
 | MCP tool | CLI |
 |---|---|
@@ -22,3 +22,13 @@ Default output is JSON. Add `--pretty` for human-readable cards/tables. The CLI 
 | set_notification_preferences | `ride notifications --json '{"daily_digest":true,"local_time":"09:00","timezone":"Asia/Shanghai"}'` |
 
 `ride proposal PROPOSAL_ID` queries status. `ride confirm PROPOSAL_ID` opens the human Ride page; it does not commit through the CLI. Credentials are stored under `~/.ride` with directory 0700 and session file 0600. Never read, echo or copy those files into chat or client configuration.
+
+| Additional tool | CLI |
+|---|---|
+| get_deposit_options | `ride deposit options` |
+| get_deposit_address | `ride deposit address --json '{"market":"perps","asset":"USDC","network":"Arbitrum"}'` |
+| check_deposit_status | `ride deposit status DEPOSIT_ID` |
+| get_daily_checkin | `ride daily --timezone Asia/Shanghai` |
+| update_portfolio | `ride portfolio update PORTFOLIO_ID --json '{"loss_trigger_pct":40}'` |
+
+`ride recommend --json '{"preferences":{"budget_usdc":"500","loss_trigger_pct":40,"market":"perps","assets":["BTC","ETH"],"portfolio_kind":"basket","basket_size":4,"risk_tolerance":"medium","asset_category":"crypto","copy_mode":"ride_recommends","loss_policy":"pause_then_exit","emergency_exit_pct":70},"batch_action":"first"}'` starts the HTML-style preview. Keep the returned preferences with `plan recalculate`. A flagged start uses `ride copy start PLAN_ID --json '{"compatibility_ack":"RETURNED_FINGERPRINT"}'` after the user explicitly acknowledges its warning.

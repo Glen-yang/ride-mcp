@@ -204,19 +204,36 @@ export class AgentRunner {
                 D(s.amount_usdc).times(s.stop_loss_pct).div(100).neg(),
               )
             ) {
-              s.state = "loss_triggered";
-              for (const x of Object.values(s.intents)) x.quantity = "0";
-              p.revision++;
-              p.control_id = uid("control");
-              await adapter.fence(user, p);
-              event(
-                state,
-                "sleeve_loss_triggered",
-                p.id,
-                "Sleeve loss threshold reached; exit is pending verification.",
-                { copy_id: s.copy_id },
-              );
-              continue;
+              const emergency =
+                s.loss_policy !== "pause_then_exit" ||
+                D(currentProfit).lte(
+                  D(s.amount_usdc)
+                    .times(s.emergency_exit_pct ?? 70)
+                    .div(100)
+                    .neg(),
+                );
+              if (emergency || s.state !== "risk_off") {
+                s.state = emergency ? "loss_triggered" : "risk_off";
+                if (emergency)
+                  for (const x of Object.values(s.intents)) x.quantity = "0";
+                p.revision++;
+                p.control_id = uid("control");
+                for (const execution of p.executions)
+                  if (execution.status === "queued")
+                    execution.status = "superseded";
+                await adapter.fence(user, p);
+                await adapter.cancelIncreasing(user, p);
+                event(
+                  state,
+                  emergency ? "sleeve_loss_triggered" : "sleeve_risk_off",
+                  p.id,
+                  emergency
+                    ? "Emergency threshold reached; owned exits are pending reconciliation."
+                    : "Trader pause threshold reached; new exposure is blocked while reductions and closes continue.",
+                  { copy_id: s.copy_id },
+                );
+              }
+              if (emergency) continue;
             }
             if (now() - (s.reviewed_at ?? 0) >= 86400_000) {
               const updated = await adapter.profile(s.trader.id);
@@ -269,14 +286,86 @@ export class AgentRunner {
                 true,
               );
             s.last_source_at = source.observed_at;
-            if (source.revision === s.source_revision) continue;
+            if (
+              source.revision === s.source_revision &&
+              s.copy_mode !== "fixed"
+            )
+              continue;
             const trial = structuredClone(p),
               t = trial.sleeves.find((x) => x.copy_id === s.copy_id)!;
+            if (t.copy_mode === "fixed" && t.fixed_last_fill_at != null) {
+              if (!adapter.sourceFills)
+                throw new AgentError(
+                  "SOURCE_FILL_EVIDENCE_MISSING",
+                  "Fixed copying requires verified source fill history.",
+                  true,
+                );
+              const fills = await adapter.sourceFills(
+                t.trader,
+                t.fixed_last_fill_at,
+                source.observed_at,
+              );
+              if (!fills.complete)
+                throw new AgentError(
+                  "SOURCE_FILL_EVIDENCE_MISSING",
+                  "Source fills are incomplete; fixed-copy targets remain unchanged.",
+                  true,
+                );
+              for (const fill of fills.fills.sort(
+                (a, b) => a.at - b.at || a.id.localeCompare(b.id),
+              )) {
+                if ((t.fixed_seen_fills ?? []).includes(fill.id)) continue;
+                if (fill.start_quantity == null)
+                  throw new AgentError(
+                    "SOURCE_FILL_EVIDENCE_MISSING",
+                    "A fixed-copy fill lacks its pre-trade source position.",
+                    true,
+                  );
+                const previousSource = D(fill.start_quantity),
+                  currentSource = previousSource.plus(fill.quantity),
+                  previousTarget = D(t.fixed_targets?.[fill.key] ?? 0);
+                const position = source.positions.find(
+                  (x) => x.key === fill.key,
+                );
+                const leverage = Math.min(
+                  t.leverage_cap,
+                  position?.source_leverage ??
+                    t.intents[fill.key]?.source_leverage ??
+                    1,
+                  snap.max_leverages[fill.key] ?? 1,
+                );
+                const unit = D(t.fixed_margin_usdc ?? 0)
+                  .times(leverage)
+                  .div(fill.price);
+                let target = previousTarget;
+                if (currentSource.isZero()) target = D(0);
+                else if (
+                  previousSource.isZero() ||
+                  previousSource.isPositive() !== currentSource.isPositive()
+                )
+                  target = unit.times(currentSource.isPositive() ? 1 : -1);
+                else if (currentSource.abs().lt(previousSource.abs()))
+                  target = previousTarget.times(
+                    currentSource.abs().div(previousSource.abs()),
+                  );
+                else
+                  target = previousTarget.plus(
+                    unit.times(currentSource.isPositive() ? 1 : -1),
+                  );
+                (t.fixed_targets ??= {})[fill.key] = target.toString();
+                (t.source_quantities ??= {})[fill.key] =
+                  currentSource.toString();
+                (t.fixed_seen_fills ??= []).push(fill.id);
+              }
+            }
             const permitted = source.positions.filter(
               (x) =>
                 x.market === "prediction" ||
-                p.preferences.allow_altcoins ||
-                p.preferences.assets.includes(x.asset),
+                (p.preferences.asset_category === "rwa"
+                  ? s.trader.asset_categories?.[x.asset] === "rwa"
+                  : p.preferences.asset_category === "any" ||
+                    p.preferences.allow_altcoins ||
+                    p.preferences.assets.includes(x.asset)),
             );
             const activeKeys = new Set(
               permitted
@@ -285,7 +374,11 @@ export class AgentRunner {
             );
             t.suppressed = t.suppressed.filter((key) => activeKeys.has(key));
             for (const old of Object.values(t.intents))
-              if (!activeKeys.has(old.key)) old.quantity = "0";
+              if (!activeKeys.has(old.key)) {
+                old.quantity = "0";
+                if (t.source_quantities) t.source_quantities[old.key] = "0";
+                if (t.fixed_targets) t.fixed_targets[old.key] = "0";
+              }
             const raw = permitted.map((x) => {
               const px = snap.prices[x.key];
               if (!px || !fresh(x.observed_at))
@@ -299,9 +392,44 @@ export class AgentRunner {
                 x.source_leverage,
                 snap.max_leverages[x.key] ?? 1,
               );
-              const quantity = D(x.quantity)
+              let quantity = D(x.quantity)
                 .times(D(t.amount_usdc).div(source.account_value_usdc))
-                .times(D(leverage).div(Math.max(1, x.source_leverage)));
+                .times(D(leverage).div(Math.max(1, x.source_leverage)))
+                .times(t.proportional_multiplier ?? 1);
+              if (t.copy_mode === "fixed") {
+                const previousSource = D(t.source_quantities?.[x.key] ?? 0),
+                  previousTarget = D(t.fixed_targets?.[x.key] ?? 0),
+                  currentSource = D(x.quantity);
+                const unit = D(t.fixed_margin_usdc ?? 0)
+                  .times(leverage)
+                  .div(px);
+                if (
+                  t.fixed_last_fill_at != null &&
+                  !currentSource.eq(previousSource)
+                )
+                  throw new AgentError(
+                    "SOURCE_FILL_EVIDENCE_MISSING",
+                    "Source position changes are not fully explained by verified fills.",
+                    true,
+                  );
+                if (currentSource.isZero()) quantity = D(0);
+                else if (
+                  previousSource.isZero() ||
+                  previousSource.isPositive() !== currentSource.isPositive()
+                )
+                  quantity = unit.times(currentSource.isPositive() ? 1 : -1);
+                else {
+                  if (!currentSource.eq(previousSource))
+                    throw new AgentError(
+                      "SOURCE_FILL_EVIDENCE_MISSING",
+                      "Source position changes are not fully explained by verified fills.",
+                      true,
+                    );
+                  quantity = previousTarget;
+                }
+                (t.source_quantities ??= {})[x.key] = x.quantity;
+                (t.fixed_targets ??= {})[x.key] = quantity.toString();
+              }
               return {
                 ...x,
                 quantity: quantity.toString(),
@@ -347,7 +475,7 @@ export class AgentRunner {
                 .times(scale)
                 .toDecimalPlaces(snap.quantity_decimals?.[x.key] ?? 8);
               const current = D(t.lots[x.key]?.quantity ?? 0);
-              if (t.state === "wind_down") {
+              if (["wind_down", "risk_off"].includes(t.state)) {
                 if (current.isZero() || current.isPositive() !== q.isPositive())
                   q = D(0);
                 else {
@@ -390,11 +518,14 @@ export class AgentRunner {
               );
             }
             t.initialized = true;
+            if (t.copy_mode === "fixed")
+              t.fixed_last_fill_at = source.observed_at;
             t.source_revision = source.revision;
             const sleeveProfit = profit.sleeves.find(
               (x) => x.copy_id === s.copy_id,
             )?.net_usdc;
             if (
+              t.loss_policy !== "pause_then_exit" &&
               sleeveProfit != null &&
               D(sleeveProfit).lte(
                 D(t.amount_usdc).times(t.stop_loss_pct).div(100).neg(),
@@ -533,7 +664,9 @@ export class AgentRunner {
             });
           }
           for (const s of p.sleeves.filter((s) =>
-            ["wind_down", "closing", "loss_triggered"].includes(s.state),
+            ["wind_down", "risk_off", "closing", "loss_triggered"].includes(
+              s.state,
+            ),
           )) {
             if (
               Object.values(s.lots).every((l) => D(l.quantity).isZero()) &&

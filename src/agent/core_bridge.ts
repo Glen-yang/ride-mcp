@@ -10,6 +10,7 @@ import {
   randomUUID,
   timingSafeEqual,
 } from "node:crypto";
+import { DepositReads } from "./deposits.js";
 import { PredictionVenue } from "./prediction.js";
 import { AgentError, failure } from "./contracts.js";
 import {
@@ -33,6 +34,8 @@ const required = (key: string) => {
 export class CoreBridge {
   private pool: pg.Pool;
   private prediction: PredictionVenue;
+  private taxonomyCache: { at: number; values: Map<string, string> } | null =
+    null;
   private candidatesCache: { at: number; rows: any[] } | null = null;
   private tokens: { value: string; expiry: number } | null = null;
   constructor(
@@ -164,6 +167,47 @@ export class CoreBridge {
       );
     return row;
   }
+  private async taxonomy(): Promise<Map<string, string>> {
+    if (this.taxonomyCache && fresh(this.taxonomyCache.at, 3600_000))
+      return this.taxonomyCache.values;
+    const rows = await this.info({ type: "perpCategories" }, true);
+    if (
+      !Array.isArray(rows) ||
+      !rows.length ||
+      rows.some(
+        (r: any) =>
+          !Array.isArray(r) ||
+          r.length !== 2 ||
+          typeof r[0] !== "string" ||
+          typeof r[1] !== "string",
+      )
+    )
+      throw new AgentError(
+        "TAXONOMY_UNAVAILABLE",
+        "Official asset classification is unavailable.",
+        true,
+        503,
+      );
+    const values = new Map<string, string>(
+      rows.map((r: any) => [r[0], r[1].toLowerCase()]),
+    );
+    this.taxonomyCache = { at: now(), values };
+    return values;
+  }
+  private async standardMode(address: string, source = false) {
+    const [mode, abstraction] = await Promise.all([
+      this.info({ type: "userAbstraction", user: address }, source),
+      this.info({ type: "userDexAbstraction", user: address }, source),
+    ]);
+    if (
+      !["standard", "disabled"].includes(mode) ||
+      ![false, null].includes(abstraction)
+    )
+      throw new AgentError(
+        "ACCOUNT_MODE_UNSUPPORTED",
+        "This dedicated RWA flow requires Standard mode; unified or portfolio-margin balances cannot be counted as separate DEX collateral.",
+      );
+  }
   async source(id: string) {
     if (
       process.env.RIDE_AGENT_PREDICTION_ENABLED === "true" &&
@@ -175,6 +219,75 @@ export class CoreBridge {
         { type: "clearinghouseState", user: row.address },
         true,
       );
+    if (
+      process.env.RIDE_AGENT_RWA_ENABLED === "true" &&
+      row.tags?.includes("category:stocks_rwa")
+    ) {
+      await this.standardMode(row.address, true);
+      const taxonomy = await this.taxonomy(),
+        scopes = [
+          ...new Set(
+            [...taxonomy]
+              .filter(([_, c]) =>
+                ["stocks", "commodities", "indices", "fx", "preipo"].includes(
+                  c,
+                ),
+              )
+              .map(([a]) => a.split(":")[0]),
+          ),
+        ].filter(
+          (s) => s && [...taxonomy.keys()].some((a) => a.startsWith(s + ":")),
+        );
+      for (let offset = 0; offset < scopes.length; offset += 3) {
+        const observations = await Promise.all(
+          scopes.slice(offset, offset + 3).map(async (dex) => ({
+            dex,
+            state: await this.info(
+              { type: "clearinghouseState", user: row.address, dex },
+              true,
+            ),
+            meta: await this.info({ type: "meta", dex }, true),
+          })),
+        );
+        for (const observation of observations) {
+          if (observation.meta.collateralToken !== 0) {
+            if (
+              observation.state.assetPositions?.some(
+                (x: any) => !D(x.position?.szi ?? 0).isZero(),
+              )
+            )
+              throw new AgentError(
+                "UNSUPPORTED_COLLATERAL",
+                "Source RWA positions use non-USDC collateral.",
+              );
+            continue;
+          }
+          if (
+            !Array.isArray(observation.state.assetPositions) ||
+            observation.state.marginSummary?.accountValue == null
+          )
+            throw new AgentError(
+              "SOURCE_STALE",
+              "Source RWA scope is incomplete.",
+              true,
+            );
+          state.marginSummary.accountValue = D(state.marginSummary.accountValue)
+            .plus(observation.state.marginSummary.accountValue)
+            .toString();
+          state.assetPositions.push(
+            ...observation.state.assetPositions.map((item: any) => ({
+              ...item,
+              position: {
+                ...item.position,
+                coin: item.position.coin.includes(":")
+                  ? item.position.coin
+                  : observation.dex + ":" + item.position.coin,
+              },
+            })),
+          );
+        }
+      }
+    }
     if (
       !state.marginSummary?.accountValue ||
       !Array.isArray(state.assetPositions)
@@ -188,7 +301,12 @@ export class CoreBridge {
     const positions: PositionIntent[] = state.assetPositions
       .map((item: any) => item.position)
       .filter(
-        (x: any) => x && x.coin && !x.coin.includes(":") && !D(x.szi).isZero(),
+        (x: any) =>
+          x &&
+          x.coin &&
+          (process.env.RIDE_AGENT_RWA_ENABLED === "true" ||
+            !x.coin.includes(":")) &&
+          !D(x.szi).isZero(),
       )
       .map((x: any) => ({
         key: `perps:${x.coin}`,
@@ -215,9 +333,9 @@ export class CoreBridge {
       revision,
       account_value_usdc: String(state.marginSummary.accountValue),
       positions,
-      complete: !state.assetPositions.some((x: any) =>
-        x.position?.coin?.includes(":"),
-      ),
+      complete:
+        process.env.RIDE_AGENT_RWA_ENABLED === "true" ||
+        !state.assetPositions.some((x: any) => x.position?.coin?.includes(":")),
     };
   }
   async profile(id: string): Promise<Candidate> {
@@ -252,6 +370,24 @@ export class CoreBridge {
             : null;
     }
     const assets = [...new Set(source.positions.map((x) => x.asset))];
+    const taxonomy = assets.some((a) => a.includes(":"))
+      ? await this.taxonomy()
+      : new Map<string, string>();
+    const classifications = assets.map(
+      (a) => taxonomy.get(a) ?? (a.includes(":") ? "unknown" : "crypto"),
+    );
+    const assetCategory = row.tags?.includes("category:stocks_rwa")
+      ? "rwa"
+      : classifications.length && classifications.every((c) => c === "crypto")
+        ? "crypto"
+        : classifications.length &&
+            classifications.every((c) =>
+              ["stocks", "commodities", "indices", "fx", "preipo"].includes(c),
+            )
+          ? "rwa"
+          : classifications.includes("unknown")
+            ? "unknown"
+            : "mixed";
     const directions = new Set(
       source.positions.map((x) =>
         D(x.quantity).isPositive() ? "long" : "short",
@@ -306,6 +442,23 @@ export class CoreBridge {
       id,
       handle,
       market: "perps",
+      asset_category: assetCategory as Candidate["asset_category"],
+      asset_categories: Object.fromEntries(
+        assets.map((a, i) => [
+          a,
+          classifications[i] === "crypto"
+            ? "crypto"
+            : ["stocks", "commodities", "indices", "fx", "preipo"].includes(
+                  classifications[i],
+                )
+              ? "rwa"
+              : "unknown",
+        ]),
+      ) as Candidate["asset_categories"],
+      execution_supported:
+        source.complete &&
+        (assetCategory !== "rwa" ||
+          process.env.RIDE_AGENT_RWA_ENABLED === "true"),
       score: Number(row.score),
       score_version: row.score_version,
       components,
@@ -437,6 +590,91 @@ export class CoreBridge {
         "Account observations are incomplete.",
         true,
       );
+    const scopedAvailable: Record<string, string> = {
+      core: String(state.withdrawable),
+    };
+    const scopes = [
+      ...new Set(
+        (p?.sleeves ?? [])
+          .flatMap((s) => s.trader.assets)
+          .filter((a) => a.includes(":"))
+          .map((a) => a.split(":")[0]),
+      ),
+    ];
+    if (scopes.length) {
+      if (process.env.RIDE_AGENT_RWA_ENABLED !== "true")
+        throw new AgentError(
+          "RWA_EXECUTION_UNAVAILABLE",
+          "RWA execution is not enabled on this independent Agent service.",
+        );
+      await this.standardMode(identity.master);
+      for (const dex of scopes) {
+        const [extra, extraOrders, extraMids, extraMeta] = await Promise.all([
+          this.info({ type: "clearinghouseState", user: identity.master, dex }),
+          this.info({ type: "frontendOpenOrders", user: identity.master, dex }),
+          this.info({ type: "allMids", dex }),
+          this.info({ type: "meta", dex }),
+        ]);
+        if (extraMeta.collateralToken !== 0)
+          throw new AgentError(
+            "UNSUPPORTED_COLLATERAL",
+            "Only verified USDC-collateral RWA DEXes can join this plan.",
+          );
+        if (
+          !Array.isArray(extra.assetPositions) ||
+          !Array.isArray(extraOrders) ||
+          !Array.isArray(extraMeta.universe) ||
+          extra.marginSummary?.accountValue == null ||
+          extra.withdrawable == null
+        )
+          throw new AgentError(
+            "ACCOUNT_STALE",
+            "RWA account scope is incomplete.",
+            true,
+          );
+        scopedAvailable[dex] = String(extra.withdrawable);
+        state.marginSummary.accountValue = D(state.marginSummary.accountValue)
+          .plus(extra.marginSummary.accountValue)
+          .toString();
+        state.withdrawable = D(state.withdrawable)
+          .plus(extra.withdrawable)
+          .toString();
+        state.assetPositions.push(
+          ...extra.assetPositions.map((item: any) => ({
+            ...item,
+            position: {
+              ...item.position,
+              coin: item.position.coin.includes(":")
+                ? item.position.coin
+                : dex + ":" + item.position.coin,
+            },
+          })),
+        );
+        orders.push(
+          ...extraOrders.map((order: any) => ({
+            ...order,
+            coin: order.coin.includes(":")
+              ? order.coin
+              : dex + ":" + order.coin,
+          })),
+        );
+        Object.assign(
+          mids,
+          Object.fromEntries(
+            Object.entries(extraMids).map(([coin, value]) => [
+              coin.includes(":") ? coin : dex + ":" + coin,
+              value,
+            ]),
+          ),
+        );
+        meta.universe.push(
+          ...extraMeta.universe.map((x: any) => ({
+            ...x,
+            name: x.name.includes(":") ? x.name : dex + ":" + x.name,
+          })),
+        );
+      }
+    }
     if (bind) {
       if (
         state.assetPositions.some(
@@ -560,6 +798,7 @@ export class CoreBridge {
       account_id: accountId,
       venue_accounts: { perps: accountId },
       available_by_market: { perps: String(state.withdrawable) },
+      available_by_scope: scopedAvailable,
       observed_at: now(),
       account_value_usdc: String(state.marginSummary.accountValue),
       available_usdc: String(state.withdrawable),
@@ -1017,6 +1256,21 @@ export class CoreBridge {
   }
   async operation(op: string, input: any): Promise<unknown> {
     switch (op) {
+      case "deposit_options":
+        return new DepositReads(
+          (op, input) => this.core(op, input),
+          this.network,
+        ).options();
+      case "deposit_address":
+        return new DepositReads(
+          (op, input) => this.core(op, input),
+          this.network,
+        ).address(input.user_id, input.input, input.portfolio_id);
+      case "deposit_status":
+        return new DepositReads(
+          (op, input) => this.core(op, input),
+          this.network,
+        ).status(input.deposit);
       case "candidates":
         return this.candidates();
       case "profile":
@@ -1060,6 +1314,8 @@ export class CoreBridge {
           fills: valid.map((f) => ({
             id: `source_${fingerprint([input.trader_id, f.tid, f.oid]).slice(0, 32)}`,
             key: `perps:${f.coin}`,
+            start_quantity:
+              f.startPosition == null ? undefined : String(f.startPosition),
             quantity: D(f.sz)
               .times(f.side === "B" ? 1 : -1)
               .toString(),
