@@ -8,7 +8,6 @@ import { detectClients, selectClient } from "./clients.js";
 import { runCli } from "./commands.js";
 import { onboard } from "./onboarding.js";
 import { setup, type ClientName } from "./setup.js";
-import { distributionPackage } from "../version.js";
 
 async function temporary(work: (home: string) => Promise<void>) {
   const home = await mkdtemp(join(tmpdir(), "ride-client-"));
@@ -152,8 +151,8 @@ it("the bare command configures each supported client before starting its own re
                   : join(home, ".claude.json");
               assert.equal(
                 JSON.parse(await readFile(path, "utf8")).mcpServers.ride
-                  .args[1],
-                distributionPackage("npm"),
+                  .args[2],
+                "@glenyang/ride-cli@latest",
               );
               authenticated = true;
             },
@@ -220,10 +219,10 @@ it("upgrades the published v0.3.2 Skill and npm registration while preserving us
     const config = JSON.parse(await readFile(path, "utf8"));
     assert.equal(config.setting, 42);
     assert.deepEqual(config.mcpServers.other, { url: "https://other.test" });
-    assert.equal(config.mcpServers.ride.args[1], distributionPackage("npm"));
+    assert.equal(config.mcpServers.ride.args[2], "@glenyang/ride-cli@latest");
     assert(
       (
         await readFile(join(home, ".cursor/skills/ride/SKILL.md"), "utf8")
-      ).includes("npx -y @glenyang/ride-cli`"),
+      ).includes("get_ride_guide"),
     );
   }));

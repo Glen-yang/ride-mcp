@@ -24,8 +24,9 @@ import {
 import { onboard } from "./onboarding.js";
 import { selectClient } from "./clients.js";
 import { VERSION } from "../version.js";
+import { fetchGuide, GUIDE_INSTRUCTIONS, registerGuide } from "../guide.js";
 
-export const HELP = `Ride CLI\n  Run with no arguments to install Skill + MCP and start browser login.\n  setup [--client codex|claude-code|cursor|auto] [--trade] [--skip-login] [--server URL] [--distribution npm|github]\n  login --server https://YOUR-RIDE-HOST/mcp [--trade]\n  preferences --json '{"budget_usdc":"500","loss_trigger_pct":20,"market":"perps"}'\n  recommend | trader TRADER_ID | portfolio [PORTFOLIO_ID] | review [PORTFOLIO_ID]\n  copy start PLAN_ID | copy update COPY_ID --json '{"leverage_cap":5}'\n  copy stop COPY_ID [--mode wind_down|close_now]\n  updates [--cursor CURSOR] [--limit 20] | position close POSITION_ID\n  plan recalculate PLAN_ID [--json ALLOCATIONS_JSON]\n  performance [PORTFOLIO_ID] [--period daily|weekly|inception]\n  diagnose COPY_ID --start-at MILLISECONDS --end-at MILLISECONDS\n  copies [--status open] [--limit 100] [--offset 0]\n  notifications [--json SETTINGS_JSON]\n  proposal PROPOSAL_ID | confirm PROPOSAL_ID\n  mcp [--server URL]\n  deposit options | deposit address --json ROUTE | deposit status DEPOSIT_ID\n  portfolio update PORTFOLIO_ID --json CHANGES | daily [--timezone Asia/Shanghai]\nSetup installs Skill + MCP and starts browser login (default server: https://mcp.onride.me/mcp).\nJSON output is default. --pretty renders a human-readable view. Confirmation opens Ride.\n`;
+export const HELP = `Ride CLI\n  Run with no arguments to install Skill + MCP and start browser login.\n  setup [--client codex|claude-code|cursor|auto] [--trade] [--skip-login] [--server URL] [--distribution npm|github]\n  login --server https://YOUR-RIDE-HOST/mcp [--trade]\n  preferences --json '{"budget_usdc":"500","loss_trigger_pct":20,"market":"perps"}'\n  recommend | trader TRADER_ID | portfolio [PORTFOLIO_ID] | review [PORTFOLIO_ID]\n  copy start PLAN_ID | copy update COPY_ID --json '{"leverage_cap":5}'\n  copy stop COPY_ID [--mode wind_down|close_now]\n  updates [--cursor CURSOR] [--limit 20] | position close POSITION_ID\n  plan recalculate PLAN_ID [--json ALLOCATIONS_JSON]\n  performance [PORTFOLIO_ID] [--period daily|weekly|inception]\n  diagnose COPY_ID --start-at MILLISECONDS --end-at MILLISECONDS\n  copies [--status open] [--limit 100] [--offset 0]\n  notifications [--json SETTINGS_JSON]\n  proposal PROPOSAL_ID | confirm PROPOSAL_ID\n  guide [--server URL] (current workflow; no login)\n  mcp [--server URL]\n  deposit options | deposit address --json ROUTE | deposit status DEPOSIT_ID\n  portfolio update PORTFOLIO_ID --json CHANGES | daily [--timezone Asia/Shanghai]\nSetup installs Skill + MCP and starts browser login (default server: https://mcp.onride.me/mcp).\nJSON output is default. --pretty renders a human-readable view. Confirmation opens Ride.\n`;
 export function parseCommand(argv: string[]): {
   command: string;
   name?: ToolName;
@@ -182,8 +183,31 @@ export async function runCli(
     );
     return;
   }
+  if (command === "guide") {
+    const url =
+      flags.server ?? process.env.RIDE_MCP_URL ?? "https://mcp.onride.me/mcp";
+    console.log(JSON.stringify(await fetchGuide(String(url))));
+    return;
+  }
   if (command === "mcp") {
-    const server = new McpServer({ name: "ride", version: VERSION });
+    const server = new McpServer(
+      { name: "ride", version: VERSION },
+      { instructions: GUIDE_INSTRUCTIONS },
+    );
+    registerGuide(server, async () => {
+      const session =
+        flags.server || process.env.RIDE_MCP_URL
+          ? undefined
+          : await loadSession();
+      return fetchGuide(
+        String(
+          flags.server ??
+            process.env.RIDE_MCP_URL ??
+            session?.server ??
+            "https://mcp.onride.me/mcp",
+        ),
+      );
+    });
     registerAgentTools(server, async (tool, input) =>
       withSessionLock(async () => {
         const session = await loadSession();

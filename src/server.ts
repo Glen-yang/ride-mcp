@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import "dotenv/config";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { GUIDE_INSTRUCTIONS, packagedGuide, registerGuide } from "./guide.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import {
   mcpAuthRouter,
@@ -150,7 +151,11 @@ async function main(): Promise<void> {
     }),
   );
   app.post("/mcp", auth, async (req, res) => {
-    const server = new McpServer({ name: "ride", version: VERSION });
+    const server = new McpServer(
+      { name: "ride", version: VERSION },
+      { instructions: GUIDE_INSTRUCTIONS },
+    );
+    registerGuide(server);
     registerAgentTools(
       server,
       async (name, args, extra) => {
@@ -213,6 +218,14 @@ async function main(): Promise<void> {
   app.get("/mcp", (_req, res) =>
     res.status(405).json({ error: "method_not_allowed" }),
   );
+  app.get("/ride/guide", async (_req, res) => {
+    try {
+      res.setHeader("Cache-Control", "no-store");
+      res.json(await packagedGuide());
+    } catch {
+      res.status(503).json({ error: "guide_unavailable" });
+    }
+  });
   app.use(requestBodyErrorHandler);
   app.listen(port, host, () =>
     console.error(`Ride MCP listening on ${base.origin}/mcp`),

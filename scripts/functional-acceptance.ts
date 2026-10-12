@@ -493,6 +493,22 @@ try {
         })
       ).stdout,
     );
+  await check("36 当前流程：HTTP/MCP/CLI 同源且无需重新登录", async () => {
+    const response = await fetch(base + "/ride/guide");
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get("cache-control"), "no-store");
+    const guide = await response.json();
+    const mcp = await alice.client.callTool({
+      name: "get_ride_guide",
+      arguments: {},
+    });
+    assert.deepEqual(mcp.structuredContent, guide);
+    assert.deepEqual(await cli(["guide", "--server", base + "/mcp"]), guide);
+    assert.equal((await alice.client.listTools()).tools.length, 22);
+    assert(alice.client.getInstructions()?.includes("get_ride_guide"));
+    assert.equal(guide.protocol, "ride-guide-v1");
+    return { release: guide.release, sha256: guide.sha256, tools: 22 };
+  });
   await check("01 偏好：500 USDC / 20% / BTC ETH", async () => {
     const v = await ok(alice.client, "set_preferences", pref);
     assert.equal(v.data.preferences.budget_usdc, "500");
@@ -1411,7 +1427,9 @@ try {
   await check("32 兼容性确认绑定当前方案，确认前不下单", async () => {
     const q = await ok(v17.client, "start_copy", {
       plan_id: v17Plan.id,
-      compatibility_ack:(await import("../src/agent/conversational.js")).compatibility(v17Plan).fingerprint,
+      compatibility_ack: (
+        await import("../src/agent/conversational.js")
+      ).compatibility(v17Plan).fingerprint,
     });
     assert.equal(q.status, "requires_confirmation");
     return { requires_human_confirmation: true };

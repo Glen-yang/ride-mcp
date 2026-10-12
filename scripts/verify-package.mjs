@@ -70,7 +70,7 @@ try {
       text.includes(
         client === "codex"
           ? 'url = "https://ride.test/mcp"'
-          : `${packed.name}@${version}`,
+          : `${packed.name}@latest`,
       ),
     );
     const autoHome = join(temp, "auto", client);
