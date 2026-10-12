@@ -16,7 +16,7 @@ import { fileURLToPath } from "node:url";
 import TOML from "@iarna/toml";
 import { setup } from "./setup.js";
 import { onboard, runCodex } from "./onboarding.js";
-import { distributionPackage } from "../version.js";
+import { distributionPackage, mcpLaunchArgs } from "../version.js";
 import { parseCommand } from "./commands.js";
 
 const server = "https://mcp.onride.me/mcp";
@@ -52,7 +52,7 @@ it("registry setup upgrades the released v0.3.1 GitHub installation without touc
     const config = JSON.parse(await readFile(path, "utf8"));
     assert.deepEqual(config.mcpServers.ride, {
       command: "npx",
-      args: ["-y", distributionPackage("npm"), "mcp", "--server", server],
+      args: mcpLaunchArgs("npm", server),
     });
     assert.deepEqual(config.mcpServers.other, { url: "https://other.test" });
     assert.equal(config.setting, 42);
@@ -106,15 +106,106 @@ it("upgrades the released v0.2.3 Skill and pinned stdio configuration without ch
     const config = JSON.parse(
       await readFile(join(home, ".cursor/mcp.json"), "utf8"),
     );
-    assert.equal(config.mcpServers.ride.args[1], distributionPackage("npm"));
+    assert.equal(config.mcpServers.ride.args[2], "@glenyang/ride-cli@latest");
     assert.deepEqual(config.mcpServers.other, { url: "https://other.test" });
     assert(
       (
         await readFile(join(home, ".cursor/skills/ride/SKILL.md"), "utf8")
-      ).includes("diagnose_copy"),
+      ).includes("get_ride_guide"),
     );
   }));
 const packaged = fileURLToPath(new URL("../../skills/ride/", import.meta.url));
+it("migrates released v0.4.0 on all clients once, retaining credentials and unrelated configuration", async () => {
+  for (const client of ["codex", "claude-code", "cursor"] as const) {
+    await temporary(async (home) => {
+      const root = join(
+        home,
+        client === "codex"
+          ? ".codex"
+          : client === "cursor"
+            ? ".cursor"
+            : ".claude",
+      );
+      await mkdir(root, { recursive: true });
+      await mkdir(join(home, ".ride"));
+      const authPath = join(home, ".ride/session.json");
+      const auth =
+        '{"server":"https://mcp.onride.me/mcp","tokens":{"access_token":"fixture-only","refresh_token":"preserve"}}';
+      await writeFile(authPath, auth, { mode: 0o600 });
+      await cp(
+        fileURLToPath(new URL("./fixtures/v040-skill/", import.meta.url)),
+        join(root, "skills/ride"),
+        { recursive: true },
+      );
+      const config =
+        client === "codex"
+          ? join(root, "config.toml")
+          : client === "cursor"
+            ? join(root, "mcp.json")
+            : join(home, ".claude.json");
+      const codexConfig = `# preserve OAuth connection\nmodel = "keep"\n[mcp_servers.ride]\nurl = "${server}"\n`;
+      await writeFile(
+        config,
+        client === "codex"
+          ? codexConfig
+          : JSON.stringify({
+              setting: 42,
+              mcpServers: {
+                other: { command: "other" },
+                ride: {
+                  command: "npx",
+                  args: [
+                    "-y",
+                    "@glenyang/ride-cli@0.4.0",
+                    "mcp",
+                    "--server",
+                    server,
+                  ],
+                },
+              },
+            }),
+      );
+      const result = await onboard(
+        client,
+        server,
+        { skipLogin: true },
+        {
+          home,
+          codex: async () => assert.fail("must preserve login"),
+          cliLogin: async () => assert.fail("must preserve login"),
+        },
+      );
+      assert.equal(await readFile(authPath, "utf8"), auth);
+      if (client === "codex") {
+        assert.equal(await readFile(config, "utf8"), codexConfig);
+        assert.equal(result.auto_updates.mcp, "hosted");
+      } else {
+        const current = JSON.parse(await readFile(config, "utf8"));
+        assert.deepEqual(current.mcpServers.ride.args, [
+          "-y",
+          "--prefer-online",
+          "@glenyang/ride-cli@latest",
+          "mcp",
+          "--server",
+          server,
+        ]);
+        assert.equal(current.setting, 42);
+        assert.deepEqual(current.mcpServers.other, { command: "other" });
+        assert.equal(result.auto_updates.mcp, "on_restart");
+      }
+      assert.equal(result.auto_updates.workflow, "live");
+      assert(
+        (await readFile(join(result.skill, "SKILL.md"), "utf8")).includes(
+          "get_ride_guide",
+        ),
+      );
+      const migrated = await readFile(config, "utf8");
+      await setup(client, server, home);
+      assert.equal(await readFile(config, "utf8"), migrated);
+      assert.equal(await readFile(authPath, "utf8"), auth);
+    });
+  }
+});
 async function temporary(work: (home: string) => Promise<void>) {
   const home = await mkdtemp(join(tmpdir(), "ride-onboarding-"));
   try {
@@ -212,7 +303,7 @@ it("unattended setup never starts login or claims authentication succeeded", () 
     assert.equal(result.login_required, true);
   }));
 
-it("Claude and Cursor automatically authenticate the CLI session used by their pinned stdio MCP", async () => {
+it("Claude and Cursor automatically authenticate the CLI session used by their automatically updated stdio MCP", async () => {
   for (const client of ["claude-code", "cursor"] as const)
     await temporary(async (home) => {
       let loggedIn = false;
@@ -235,13 +326,7 @@ it("Claude and Cursor automatically authenticate the CLI session used by their p
               .mcpServers.ride;
             assert.deepEqual(entry, {
               command: "npx",
-              args: [
-                "-y",
-                distributionPackage("npm"),
-                "mcp",
-                "--server",
-                server,
-              ],
+              args: mcpLaunchArgs("npm", server),
             });
           },
         },
@@ -316,7 +401,7 @@ it("upgrades released JSON stdio configurations to this distribution version", (
     const current = JSON.parse(await readFile(path, "utf8"));
     assert.equal(current.setting, 42);
     assert.equal(current.mcpServers.other.command, "other");
-    assert.equal(current.mcpServers.ride.args[1], distributionPackage("npm"));
+    assert.equal(current.mcpServers.ride.args[2], "@glenyang/ride-cli@latest");
   }));
 
 it("refuses customized Skill references without altering client configuration", () =>

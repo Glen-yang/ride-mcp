@@ -14,10 +14,12 @@ import { fileURLToPath } from "node:url";
 import { randomBytes, createHash } from "node:crypto";
 import TOML from "@iarna/toml";
 import { serverUrl } from "./session.js";
-import { distributionPackage, PACKAGE_NAME, VERSION } from "../version.js";
+import { mcpLaunchArgs, PACKAGE_NAME, VERSION } from "../version.js";
 
 export type ClientName = "codex" | "claude-code" | "cursor";
 const legacySkillHashes = new Set([
+  // Unmodified v0.4.0 Skill tree.
+  "fa661229246655abb153eccc5fea9862e53b6c02f18b9c3e12b9b962119c4272",
   // Unmodified v0.3.4 Skill tree.
   "d460b444e14160d31557f8e1067ee6a12d3c6b1a38d9fbee8f0a4c9fc6c42d89",
   // Unmodified v0.3.3 Skill tree.
@@ -41,6 +43,7 @@ const managedVersions = [
   "0.3.2",
   "0.3.3",
   "0.3.4",
+  "0.4.0",
   VERSION,
 ];
 
@@ -81,16 +84,20 @@ function managedStdio(
     current.command !== "npx"
   )
     return false;
-  return managedVersions.some((version) =>
-    [
-      `github:Glen-yang/ride-mcp#v${version}`,
-      `@glen-yang/ride-cli@${version}`,
-      `${PACKAGE_NAME}@${version}`,
-    ].some(
-      (pkg) =>
-        JSON.stringify(current.args) ===
-        JSON.stringify(["-y", pkg, "mcp", "--server", server]),
-    ),
+  return (
+    JSON.stringify(current.args) ===
+      JSON.stringify(mcpLaunchArgs("npm", server)) ||
+    managedVersions.some((version) =>
+      [
+        `github:Glen-yang/ride-mcp#v${version}`,
+        `@glen-yang/ride-cli@${version}`,
+        `${PACKAGE_NAME}@${version}`,
+      ].some(
+        (pkg) =>
+          JSON.stringify(current.args) ===
+          JSON.stringify(["-y", pkg, "mcp", "--server", server]),
+      ),
+    )
   );
 }
 
@@ -105,6 +112,7 @@ export async function setup(
   skill: string;
   login_required: true;
   transport: "http" | "stdio";
+  auto_updates: { mcp: "hosted" | "on_restart" | "pinned"; workflow: "live" };
 }> {
   server = serverUrl(server);
   if (!["codex", "claude-code", "cursor"].includes(client))
@@ -127,13 +135,7 @@ export async function setup(
     "skills",
     "ride",
   );
-  const args = [
-    "-y",
-    distributionPackage(distribution),
-    "mcp",
-    "--server",
-    server,
-  ];
+  const args = mcpLaunchArgs(distribution, server);
   const entry = client === "codex" ? { url: server } : { command: "npx", args };
   let old: string | undefined;
   try {
@@ -245,6 +247,15 @@ export async function setup(
       skill,
       login_required: true,
       transport: client === "codex" ? "http" : "stdio",
+      auto_updates: {
+        mcp:
+          client === "codex"
+            ? "hosted"
+            : distribution === "npm"
+              ? "on_restart"
+              : "pinned",
+        workflow: "live",
+      },
     };
   } catch (e) {
     if (skillChanged) await rm(skill, { recursive: true, force: true });

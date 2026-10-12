@@ -11,3 +11,19 @@ export function distributionPackage(distribution: "github" | "npm"): string {
     ? `${PACKAGE_NAME}@${VERSION}`
     : `github:Glen-yang/ride-mcp#v${VERSION}`;
 }
+
+export function mcpLaunchArgs(
+  distribution: "github" | "npm",
+  server: string,
+): string[] {
+  return distribution === "npm"
+    ? [
+        "-y",
+        "--prefer-online",
+        `${PACKAGE_NAME}@latest`,
+        "mcp",
+        "--server",
+        server,
+      ]
+    : ["-y", distributionPackage(distribution), "mcp", "--server", server];
+}
