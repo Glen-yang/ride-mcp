@@ -14,7 +14,7 @@ Implemented:
 - Real RWA taxonomy, exact qualified symbols, Standard mode and scoped USDC collateral.
 - CLI/Skill parity and upgrade from the released 0.3.4 tree.
 
-Observed validation before deployment: 91 TypeScript tests passed with dedicated PostgreSQL; 35 functional HTTP/MCP/OAuth/CLI/PostgreSQL scenarios passed using simulated identities/fills; Skill validation passed; package verification passed for three clients and bare setup. Core: 8 Strategy gRPC tests, 37 execution tests, and a disposable-schema PostgreSQL trigger test passed.
+Observed validation before deployment: 92 TypeScript tests passed with dedicated PostgreSQL; 35 functional HTTP/MCP/OAuth/CLI/PostgreSQL scenarios passed using simulated identities/fills; Skill validation passed; package verification passed for three clients and bare setup. The final Fixed regression proves that new assets and direction flips require fills even when a source history response reports complete coverage. Core: 8 Strategy gRPC tests, 37 execution tests, and a disposable-schema PostgreSQL trigger test passed.
 
 Browser acceptance after the final edits passed: single Fixed trader selection and replacement, amount/leverage recalculation, zero-balance rejection, funding-route restrictions and QR/status/resume, immutable proposal confirmation, unrecalculated edits staying disabled after overlap acknowledgment, profit/account-value switching, notification settings, and 390px layout without horizontal overflow. Evidence is in the ignored `output/deployment/v17-acceptance/` directory.
 

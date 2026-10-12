@@ -323,6 +323,64 @@ it("Fixed copying adds margin for each verified entry and reduces proportionally
     ),
   );
 });
+it("Fixed copying rejects unexplained new assets and direction flips even when fill coverage reports complete", async () => {
+  const { api, repo, adapter } = env();
+  const p = fromPlan(
+    recommend(
+      {
+        ...legacy,
+        portfolio_kind: "single",
+        copy_mode: "fixed",
+        fixed_margin_usdc: "10",
+      },
+      [adapter.pool[0]],
+    ),
+  );
+  p.account_id = adapter.snap.account_id;
+  p.initial_equity = "500";
+  p.state = "active";
+  p.ledger_started_at = now() - 1000;
+  p.reconciliation = "complete";
+  await repo.transact("alice", async (state) => {
+    state.portfolios.push(p);
+  });
+  await new AgentRunner(api).tick("alice");
+  const originalSource = adapter.source.bind(adapter);
+  adapter.sourceFills = async () => ({ complete: true, fills: [] });
+  adapter.source = async (c) => {
+    const source = await originalSource(c);
+    source.revision = "new_asset_without_fill";
+    source.positions.push({
+      ...source.positions[0],
+      key: "perps:ETH",
+      asset: "ETH",
+    });
+    return source;
+  };
+  await new AgentRunner(api).tick("alice");
+  await repo.transact("alice", async (state) => {
+    assert.equal(
+      state.portfolios[0].sleeves[0].intents["perps:ETH"]?.quantity ?? "0",
+      "0",
+    );
+    assert.ok(
+      state.updates.some((e) => e.kind === "SOURCE_FILL_EVIDENCE_MISSING"),
+    );
+  });
+  adapter.source = async (c) => {
+    const source = await originalSource(c);
+    source.revision = "direction_flip_without_fill";
+    source.positions[0].quantity = "-5";
+    return source;
+  };
+  await new AgentRunner(api).tick("alice");
+  await repo.transact("alice", async (state) => {
+    assert.equal(
+      state.portfolios[0].sleeves[0].intents["perps:BTC"].quantity,
+      "0.5",
+    );
+  });
+});
 it("portfolio stop changes are proposals and a triggered stop cannot be restarted", async () => {
   const { api, repo, adapter } = env();
   const p = fromPlan(recommend(legacy, adapter.pool));

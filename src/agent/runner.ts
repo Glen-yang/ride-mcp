@@ -403,6 +403,15 @@ export class AgentRunner {
                 const unit = D(t.fixed_margin_usdc ?? 0)
                   .times(leverage)
                   .div(px);
+                if (
+                  t.fixed_last_fill_at != null &&
+                  !currentSource.eq(previousSource)
+                )
+                  throw new AgentError(
+                    "SOURCE_FILL_EVIDENCE_MISSING",
+                    "Source position changes are not fully explained by verified fills.",
+                    true,
+                  );
                 if (currentSource.isZero()) quantity = D(0);
                 else if (
                   previousSource.isZero() ||

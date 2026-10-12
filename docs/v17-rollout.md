@@ -23,7 +23,7 @@ Bridge and backend are running 0.4.0. Until the corrected Core is ready, bridge 
 
 ## Validation completed
 
-- TypeScript check and 91 automated tests, including legacy plan limits/stop behavior and new Fixed/proportional, two-stage stop, ownership and preview batch behavior.
+- TypeScript check and 92 automated tests, including legacy plan limits/stop behavior and new Fixed/proportional, two-stage stop, ownership and preview batch behavior. An additional Fixed regression requires source fills for new assets and direction flips; a complete-history flag with no supporting fills cannot introduce exposure.
 - 35 HTTP/MCP/OAuth/CLI/PostgreSQL scenarios with simulated identities/fills.
 - Package verification: three client setups, three bare-command setups, legacy upgrades, no private history. Skill validation passed.
 - Browser: single Fixed plans and trader replacement; precise edits/recalculation; zero-balance rejection; funding route/address/QR/status and saved-plan resume; frozen confirmation; dirty edits cannot be enabled by toggling the compatibility acknowledgment; portfolio management; chart switching; daily report time/timezone persistence; 390px no horizontal overflow.
