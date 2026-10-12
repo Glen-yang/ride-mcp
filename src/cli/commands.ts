@@ -7,7 +7,12 @@ import {
   type Result,
   AgentError,
 } from "../agent/contracts.js";
-import { invokeAgent, registerAgentTools } from "../agent/mcp.js";
+import {
+  invokeAgent,
+  registerAgentTools,
+  registerAppAccountRead,
+} from "../agent/mcp.js";
+import { accountCopiesInput } from "../account_reads.js";
 import {
   loadSession,
   login,
@@ -20,7 +25,7 @@ import { onboard } from "./onboarding.js";
 import { selectClient } from "./clients.js";
 import { VERSION } from "../version.js";
 
-export const HELP = `Ride CLI\n  Run with no arguments to install Skill + MCP and start browser login.\n  setup [--client codex|claude-code|cursor|auto] [--trade] [--skip-login] [--server URL] [--distribution npm|github]\n  login --server https://YOUR-RIDE-HOST/mcp [--trade]\n  preferences --json '{"budget_usdc":"500","loss_trigger_pct":20,"market":"perps"}'\n  recommend | trader TRADER_ID | portfolio [PORTFOLIO_ID] | review [PORTFOLIO_ID]\n  copy start PLAN_ID | copy update COPY_ID --json '{"leverage_cap":5}'\n  copy stop COPY_ID [--mode wind_down|close_now]\n  updates [--cursor CURSOR] [--limit 20] | position close POSITION_ID\n  plan recalculate PLAN_ID [--json ALLOCATIONS_JSON]\n  performance [PORTFOLIO_ID] [--period daily|weekly|inception]\n  diagnose COPY_ID --start-at MILLISECONDS --end-at MILLISECONDS\n  notifications [--json SETTINGS_JSON]\n  proposal PROPOSAL_ID | confirm PROPOSAL_ID\n  mcp [--server URL]\nSetup installs Skill + MCP and starts browser login (default server: https://mcp.onride.me/mcp).\nJSON output is default. --pretty renders a human-readable view. Confirmation opens Ride.\n`;
+export const HELP = `Ride CLI\n  Run with no arguments to install Skill + MCP and start browser login.\n  setup [--client codex|claude-code|cursor|auto] [--trade] [--skip-login] [--server URL] [--distribution npm|github]\n  login --server https://YOUR-RIDE-HOST/mcp [--trade]\n  preferences --json '{"budget_usdc":"500","loss_trigger_pct":20,"market":"perps"}'\n  recommend | trader TRADER_ID | portfolio [PORTFOLIO_ID] | review [PORTFOLIO_ID]\n  copy start PLAN_ID | copy update COPY_ID --json '{"leverage_cap":5}'\n  copy stop COPY_ID [--mode wind_down|close_now]\n  updates [--cursor CURSOR] [--limit 20] | position close POSITION_ID\n  plan recalculate PLAN_ID [--json ALLOCATIONS_JSON]\n  performance [PORTFOLIO_ID] [--period daily|weekly|inception]\n  diagnose COPY_ID --start-at MILLISECONDS --end-at MILLISECONDS\n  copies [--status open] [--limit 100] [--offset 0]\n  notifications [--json SETTINGS_JSON]\n  proposal PROPOSAL_ID | confirm PROPOSAL_ID\n  mcp [--server URL]\nSetup installs Skill + MCP and starts browser login (default server: https://mcp.onride.me/mcp).\nJSON output is default. --pretty renders a human-readable view. Confirmation opens Ride.\n`;
 export function parseCommand(argv: string[]): {
   command: string;
   name?: ToolName;
@@ -189,6 +194,27 @@ export async function runCli(
         );
       }),
     );
+    registerAppAccountRead(server, async (input) =>
+      withSessionLock(async () => {
+        const session = await loadSession();
+        if (
+          !session ||
+          (flags.server && serverUrl(flags.server as string) !== session.server)
+        )
+          throw new AgentError(
+            "AUTH_REQUIRED",
+            "Run ride login first.",
+            false,
+            401,
+          );
+        return invokeAgent(
+          session.server,
+          await accessToken(session),
+          "get_my_copies",
+          input,
+        );
+      }),
+    );
     await server.connect(new StdioServerTransport());
     return;
   }
@@ -202,6 +228,19 @@ export async function runCli(
         401,
       );
     const token = await accessToken(session);
+    if (command === "copies") {
+      const input = accountCopiesInput.parse({
+        ...args,
+        ...(flags.limit ? { limit: Number(flags.limit) } : {}),
+        ...(flags.offset ? { offset: Number(flags.offset) } : {}),
+        ...(flags.status ? { status: flags.status } : {}),
+      });
+      print(
+        await invokeAgent(session.server, token, "get_my_copies", input),
+        !!flags.pretty,
+      );
+      return;
+    }
     if (command === "proposal" || command === "confirm") {
       const value = await invokeAgent(session.server, token, "proposal", {
         proposal_id: positionals[1],
@@ -244,10 +283,31 @@ function print(value: Result, pretty: boolean): void {
   console.log(`Ride · ${value.status} · ${value.as_of}`);
   if (value.error) {
     console.log(`${value.error.code}: ${value.error.message}`);
+    if (value.data.recommendation_diagnostics)
+      console.log(
+        JSON.stringify(value.data.recommendation_diagnostics, null, 2),
+      );
     return;
   }
   const data = value.data as any;
-  if (data.plan) {
+  if (data.account?.authenticated)
+    console.log(`Signed in: ${data.account.display_name ?? "Ride user"}`);
+  const app =
+    data.app_copies ?? (data.query_scope === "ride_app_copies" ? data : null);
+  if (app?.perps && app?.prediction) {
+    for (const [market, copies] of [
+      ["Perps", app.perps],
+      ["Prediction", app.prediction],
+    ] as const) {
+      console.log(
+        `${market} App copies · ${copies.configs.length} configs · ${copies.positions.length} current positions`,
+      );
+      console.table(copies.configs);
+      console.table(copies.positions);
+    }
+    console.log(`Coverage: ${app.coverage_complete ? "complete" : "partial"}`);
+  }
+  if (data.plan && !data.saved_preview) {
     console.table(
       data.plan.allocations.map((s: any) => ({
         trader: s.trader.handle,
@@ -273,6 +333,10 @@ function print(value: Result, pretty: boolean): void {
       })),
     );
     console.table(p.positions);
+  } else if (data.saved_preview) {
+    console.log(`Saved preview · ${data.plan_status} · ${data.plan.id}`);
+  } else if (app) {
+    // App account tables above are already complete.
   } else if (data.trader) {
     console.log(
       `${data.trader.handle} · ${data.trader.market} · Copy Score ${data.trader.score}`,

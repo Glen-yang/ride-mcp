@@ -1012,7 +1012,7 @@ function renderAuthorizePage(
           Continue with Google
         </button>
       </div>
-      <div id="status" class="status">Claude will open this link, then Ride will handle login here.</div>
+      <div id="status" class="status">Continue with Google to connect your Ride account.</div>
     </form>
 
     ${
@@ -1049,6 +1049,7 @@ function renderAuthorizePage(
     const accessCodeInput = document.getElementById('access-code');
 
     let privy;
+    let privyInitialization;
 
     function setStatus(message, isError = false) {
       statusEl.textContent = message;
@@ -1060,6 +1061,9 @@ function renderAuthorizePage(
       if (message.includes('Redirect URL is not allowed')) {
         return 'Redirect URL is not allowed. Add ' + window.location.origin + '/auth/privy/oauth/callback in Privy Advanced -> Allowed OAuth redirect URLs.';
       }
+      if (error?.name === 'AbortError' || error?.name === 'TimeoutError' || /aborted|timed? ?out/i.test(message)) {
+        return 'The connection to Privy timed out. Check your network or proxy, then retry Continue with Google. Your account has not been changed.';
+      }
       return message;
     }
 
@@ -1070,6 +1074,7 @@ function renderAuthorizePage(
 
     async function initPrivy() {
       if (privy) return privy;
+      if (privyInitialization) return privyInitialization;
       if (!config.privyAppId) {
         throw new Error('Ride MCP is missing Privy configuration.');
       }
@@ -1080,9 +1085,16 @@ function renderAuthorizePage(
       if (config.privyClientId) {
         options.clientId = config.privyClientId;
       }
-      privy = new Privy(options);
-      await privy.initialize();
-      return privy;
+      privyInitialization = (async () => {
+        const client = new Privy(options);
+        await client.initialize();
+        privy = client;
+        return client;
+      })().catch((error) => {
+        privyInitialization = undefined;
+        throw error;
+      });
+      return privyInitialization;
     }
 
     function linkedAccounts(user) {
@@ -1286,7 +1298,7 @@ function renderPrivyOAuthCallbackPage(): string {
     const statusEl = document.getElementById('status');
     const originalAuthorizeUrl = sessionStorage.getItem('ride:mcp:oauth_authorize_url');
     if (!originalAuthorizeUrl) {
-      statusEl.textContent = 'Missing original Ride authorization request. Please restart authorization from Claude.';
+      statusEl.textContent = 'Missing original Ride authorization request. Please restart authorization from your AI client.';
       statusEl.classList.add('error');
     } else {
       const currentUrl = new URL(window.location.href);

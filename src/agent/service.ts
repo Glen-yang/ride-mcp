@@ -17,6 +17,7 @@ import {
   recommend,
   recommendedLeverage,
   eligibleCandidates,
+  recommendationDiagnostics,
   aggregate,
   risk,
   pnl,
@@ -67,7 +68,38 @@ export class AgentService {
             false,
             400,
           );
-        const plan = recommend(pref, pool);
+        let plan: Plan;
+        try {
+          plan = recommend(pref, pool);
+        } catch (error) {
+          if (
+            !(error instanceof AgentError) ||
+            error.code !== "NO_EXECUTABLE_PLAN"
+          )
+            throw error;
+          const diagnostics = recommendationDiagnostics(pref, pool);
+          const sourceUnavailable = [
+            "source_data_unavailable",
+            "market_source_data_unavailable",
+            "stale_source_scores",
+          ].includes(diagnostics.blocker);
+          const message = sourceUnavailable
+            ? "Current trader score data is unavailable for this market. Your budget has not been identified as the cause. Retry after source data is refreshed; funding is not required for a preview."
+            : `A three-trader basket is unavailable under these preferences: ${diagnostics.blocker}. Review the returned filter counts before changing preferences.`;
+          return {
+            ...result(
+              {
+                preferences: pref,
+                plan: null,
+                account: { authenticated: true, user_id: user },
+                candidates: eligibleCandidates(pref, pool),
+                recommendation_diagnostics: diagnostics,
+              },
+              sourceUnavailable ? "stale" : "empty",
+            ),
+            error: { code: error.code, message, retryable: sourceUnavailable },
+          };
+        }
         s.plans = s.plans
           .filter((x) => x.created_at > now() - 90 * 86400_000)
           .slice(-99);

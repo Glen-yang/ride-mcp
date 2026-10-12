@@ -321,6 +321,63 @@ export function recommend(p: Preferences, candidates: Candidate[]): Plan {
     })),
   };
 }
+
+export function recommendationDiagnostics(
+  p: Preferences,
+  candidates: Candidate[],
+) {
+  const marketRows = candidates.filter(
+    (c) => p.market === "both" || c.market === p.market,
+  );
+  const freshRows = marketRows.filter(
+    (c) => c.expires_at > now() && fresh(c.scored_at, 36 * 3600_000),
+  );
+  const qualified = freshRows.filter((c) => c.eligibility === "PASS");
+  const assets = qualified.filter(
+    (c) =>
+      c.assets.length &&
+      (c.market === "prediction" ||
+        c.assets.every(
+          (a) =>
+            p.assets.includes(a) ||
+            (p.allow_altcoins && !["BTC", "ETH"].includes(a)),
+        )),
+  );
+  const eligible = eligibleCandidates(p, candidates);
+  const affordable = eligible.filter((c) =>
+    D(p.budget_usdc).div(3).gte(c.min_notional_usdc),
+  );
+  const blocker = !candidates.length
+    ? "source_data_unavailable"
+    : !marketRows.length
+      ? "market_source_data_unavailable"
+      : freshRows.length < 3 && freshRows.length < marketRows.length
+        ? "stale_source_scores"
+        : qualified.length < 3 && qualified.length < freshRows.length
+          ? "source_eligibility"
+          : assets.length < 3 && assets.length < qualified.length
+            ? "asset_preferences"
+            : eligible.length < 3 && eligible.length < assets.length
+              ? "risk_limits_or_missing_risk_data"
+              : eligible.length < 3
+                ? "eligible_trader_supply"
+                : affordable.length < 3
+                  ? "budget_minimums"
+                  : "basket_diversification";
+  return {
+    source_candidates: candidates.length,
+    market_candidates: marketRows.length,
+    fresh_candidates: freshRows.length,
+    qualified_candidates: qualified.length,
+    asset_matching_candidates: assets.length,
+    eligible_candidates: eligible.length,
+    budget_eligible_candidates: affordable.length,
+    minimum_basket_size: 3,
+    blocker,
+    funding_required: false,
+    execution_available: false,
+  };
+}
 function diversity(c: Candidate, chosen: Candidate[]): number {
   return (
     c.score -

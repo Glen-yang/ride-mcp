@@ -16,7 +16,12 @@ import {
   type PrivyAuthorizationInput,
 } from "./oauth.js";
 import { createRideHttpApp, requestBodyErrorHandler } from "./http_security.js";
-import { registerAgentTools, invokeAgent } from "./agent/mcp.js";
+import {
+  registerAgentTools,
+  registerAppAccountRead,
+  invokeAgent,
+} from "./agent/mcp.js";
+import { invokeAccountRead } from "./account_reads.js";
 import { mountAgentProxy } from "./agent/http.js";
 import { mountHumanConfirmation } from "./agent/human.js";
 import { validateCoreIdentity } from "./agent/backend.js";
@@ -118,7 +123,15 @@ async function main(): Promise<void> {
     }),
   );
   app.use(createRideOAuthApprovalRouter(provider));
-  mountAgentProxy(app, auth, backend, readOnly);
+  const accountRead = (
+    name: "get_portfolio" | "get_my_copies",
+    args: unknown,
+    token: string,
+  ) =>
+    invokeAccountRead(name, args, token, graphql, () =>
+      invokeAgent(backend, token, "get_portfolio", args),
+    );
+  mountAgentProxy(app, auth, backend, readOnly, accountRead);
   if (!readOnly) {
     mountHumanConfirmation(app, {
       backend,
@@ -153,6 +166,8 @@ async function main(): Promise<void> {
             403,
           );
         const token = extra.authInfo?.extra?.rideAuthToken;
+        if (name === "get_portfolio" && typeof token === "string")
+          return accountRead(name, args, token);
         return invokeAgent(
           backend,
           typeof token === "string" ? token : undefined,
@@ -162,6 +177,24 @@ async function main(): Promise<void> {
       },
       readOnly,
     );
+    registerAppAccountRead(server, async (args, extra) => {
+      if (!extra.authInfo?.scopes?.includes("ride:read"))
+        throw new AgentError(
+          "SCOPE_REQUIRED",
+          "Missing ride:read permission.",
+          false,
+          403,
+        );
+      const token = extra.authInfo?.extra?.rideAuthToken;
+      if (typeof token !== "string")
+        throw new AgentError(
+          "AUTH_REQUIRED",
+          "A Ride OAuth session is required.",
+          false,
+          401,
+        );
+      return accountRead("get_my_copies", args, token);
+    });
     const transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: undefined,
     });

@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { accountCopiesInput } from "../account_reads.js";
 import {
   AgentError,
   failure,
@@ -15,6 +16,48 @@ import {
 } from "./contracts.js";
 
 export const RESOURCE_URI = "ui://ride/agent-v3.html";
+export function registerAppAccountRead(
+  server: McpServer,
+  invoke: (args: unknown, extra: any) => Promise<Result>,
+): void {
+  server.registerTool(
+    "get_my_copies",
+    {
+      title: "Your Ride App copies and positions",
+      description:
+        "Read the signed-in account's existing Ride App Perps and prediction copies and current copied positions. Successful reads verify login, including empty accounts. App copies remain managed in Ride.",
+      inputSchema: accountCopiesInput,
+      outputSchema: output,
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: true,
+      },
+      _meta: {
+        ui: { resourceUri: RESOURCE_URI },
+        "openai/outputTemplate": RESOURCE_URI,
+      },
+    },
+    async (args, extra) => {
+      try {
+        const value = publicResult(await invoke(args, extra));
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify(value) }],
+          structuredContent: value,
+          isError: !!value.error,
+        };
+      } catch (e) {
+        const value = failure(e);
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify(value) }],
+          structuredContent: value,
+          isError: true,
+        };
+      }
+    },
+  );
+}
 export function registerAgentTools(
   server: McpServer,
   invoke: (name: ToolName, args: unknown, extra: any) => Promise<Result>,
@@ -141,7 +184,7 @@ function description(name: ToolName): string {
     start_copy:
       "Create an expiring start proposal. Human confirmation in Ride is required unless bounded Ride authority applies.",
     get_portfolio:
-      "Read actual owned positions, gross and net exposure, reservations and reconciled follower net profit. Missing values are null.",
+      "Read the signed-in account, Agent portfolio and existing Ride App copies and positions. An empty Agent portfolio still confirms login. App copies remain separately managed in Ride. Missing values are null.",
     update_copy:
       "Propose amount, leverage cap, sleeve loss trigger or an explicit eligible replacement. Released funds must be verified.",
     stop_copy:
