@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { mkdtemp, rm, readFile } from "node:fs/promises";
+import { mkdtemp, mkdir, rm, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -53,6 +53,15 @@ try {
   const { setup } = await import(
     pathToFileURL(join(root, "dist/cli/setup.js"))
   );
+  const { runCli } = await import(
+    pathToFileURL(join(root, "dist/cli/commands.js"))
+  );
+  const { onboard } = await import(
+    pathToFileURL(join(root, "dist/cli/onboarding.js"))
+  );
+  const { detectClients, selectClient } = await import(
+    pathToFileURL(join(root, "dist/cli/clients.js"))
+  );
   for (const client of ["codex", "claude-code", "cursor"]) {
     const home = join(temp, client);
     const result = await setup(client, "https://ride.test/mcp", home);
@@ -64,6 +73,39 @@ try {
           : `${packed.name}@${version}`,
       ),
     );
+    const autoHome = join(temp, "auto", client);
+    await mkdir(
+      join(autoHome, client === "claude-code" ? ".claude" : `.${client}`),
+      { recursive: true },
+    );
+    const log = console.log;
+    let authenticated = false;
+    try {
+      console.log = () => {};
+      await runCli([], {
+        selectClient: (requested) =>
+          selectClient(requested, {
+            detect: () =>
+              detectClients({ home: autoHome, path: "", platform: "linux" }),
+            interactive: false,
+          }),
+        onboard: (selected, server, options) =>
+          onboard(selected, server, options, {
+            home: autoHome,
+            codex: async (args) => {
+              assert.equal(args.at(-1), "ride:read,ride:trade");
+              authenticated = true;
+            },
+            cliLogin: async (server, trade) => {
+              assert.equal(trade, true);
+              authenticated = true;
+            },
+          }),
+      });
+    } finally {
+      console.log = log;
+    }
+    assert(authenticated);
     assert(
       (await readFile(join(result.skill, "SKILL.md"), "utf8")).includes(
         "name: ride",
@@ -76,6 +118,7 @@ try {
       tarball_bytes: packed.size,
       bins: 1,
       client_setups: 3,
+      bare_command_setups: 3,
       private_history: false,
     }),
   );
