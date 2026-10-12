@@ -1,6 +1,6 @@
 # CLI equivalence
 
-Default output is JSON. Add `--pretty` for human-readable cards/tables. The CLI bin is `ride`; use `npx -y github:Glen-yang/ride-mcp#v0.3.0` before each command until installed globally. Codex native HTTP MCP credentials are managed by Codex. For standalone CLI use, authenticate separately with `ride login --server https://mcp.onride.me/mcp --trade`. Claude/Cursor setup creates this CLI session automatically.
+Default output is JSON. Add `--pretty` for human-readable cards/tables. The CLI bin is `ride`; use `npx -y github:Glen-yang/ride-mcp#v0.3.1` before each command until installed globally. Codex native HTTP MCP credentials are managed by Codex. For standalone CLI use, authenticate separately with `ride login --server https://mcp.onride.me/mcp --trade`. Claude/Cursor setup creates this CLI session automatically.
 
 | MCP tool | CLI |
 |---|---|

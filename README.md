@@ -9,7 +9,7 @@ Ride Agent V3 selects a diversified trader basket and manages owned Perps and pr
 Node.js 20+, npm and your chosen AI client are required. Install the Skill, connect the production MCP and start login in one command:
 
 ```sh
-npx -y github:Glen-yang/ride-mcp#v0.3.0 setup --client codex --trade
+npx -y github:Glen-yang/ride-mcp#v0.3.1 setup --client codex --trade
 ```
 
 Complete login and authorization with your own Ride account in the browser, then restart Codex or open a new chat. Codex uses native HTTP MCP and its own OAuth credential storage. If the Codex CLI is absent, setup runs the official `@openai/codex@0.162.0` CLI through npx automatically; no separate global CLI installation is needed.
@@ -24,7 +24,7 @@ For the Skill alone:
 npx skills add Glen-yang/ride-mcp --skill ride
 ```
 
-The Skill-only command does not register an MCP server. For standalone CLI commands, prefix the commands below with `npx -y github:Glen-yang/ride-mcp#v0.3.0`, or install the pinned repository with `npm install -g github:Glen-yang/ride-mcp#v0.3.0` to obtain `ride`.
+The Skill-only command does not register an MCP server. For standalone CLI commands, prefix the commands below with `npx -y github:Glen-yang/ride-mcp#v0.3.1`, or install the pinned repository with `npm install -g github:Glen-yang/ride-mcp#v0.3.1` to obtain `ride`.
 
 ## Use
 

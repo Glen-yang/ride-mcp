@@ -37,7 +37,14 @@ State and ledger records persist in PostgreSQL; each user transition locks its r
 - `RIDE_AGENT_EXECUTOR_TOKEN`: separate token used by the Agent service.
 - `RIDE_AGENT_NETWORK=testnet|mainnet`: Perps execution network; default testnet.
 - `RIDE_AGENT_PREDICTION_ENABLED=true` plus `RIDE_AGENT_POLYGON_RPC_URL`: explicit prediction activation on Polygon. Prediction has no paper-trading mode in this integration.
-- `FIREBASE_SERVICE_ACCOUNT_JSON`: server-side push credentials, never shipped to clients.
+- `FCM_SERVICE_ACCOUNT_JSON_BASE64`: reuse the existing Ride Firebase service account on `agent-bridge` only. Legacy raw `FIREBASE_SERVICE_ACCOUNT_JSON` / `FCM_SERVICE_ACCOUNT_JSON` remains supported. Never ship service-account credentials to clients.
+- `RIDE_AGENT_FCM_PROJECT_ID`: optional expected Firebase project; a mismatch fails closed. Existing Ride production uses `ride-fiamma`.
+
+## App daily-report links (0.3.1)
+
+FCM data preserves `type=ride_agent` and includes `event_id`, `event_kind` and, when present, `portfolio_id`. New App builds route a validated event ID to `/agent/reports/:eventId`; existing notification types retain their routes. The page reads `POST /agent/human/update` with `{ "event_id": "update_..." }` using the existing Core bearer session. OAuth MCP tokens cannot read this native endpoint. Missing and foreign reports both return 404. Reports preserve their generated snapshot, including incomplete coverage and null profit; they do not change a portfolio.
+
+Keep Core, the existing App backend and Firebase credential source unchanged. Deploy bridge and backend before updating the public gateway. Verify each terminal deployment and the gateway release independently. A Firebase API acceptance is provider acceptance; simulator injection verifies navigation, and neither establishes physical-device delivery.
 
 Core requires `RIDE_AGENT_CORE_ENABLED=true`, the same Core S2S token, and explicit `RIDE_AGENT_PREDICTION_ENABLED=true` for prediction execution. Set `RIDE_AGENT_NETWORK` consistently in Core and bridge; mainnet also requires Core `RIDE_AGENT_MAINNET_ENABLED=true`. The API and gRPC execution gateway must share their existing `STRATEGY_CONTROL_PLANE_SERVICE_TOKEN`; this is separate from the Node-to-Core token. Existing mainnet execution epoch controls continue to apply. Signing remains in existing workers. Apply all three additive migrations from the private implementation: execution mode/quantity, prediction ownership, and archived account reuse. Legacy mode retains its original policy caps.
 

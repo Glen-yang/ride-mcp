@@ -2,6 +2,7 @@
 import "dotenv/config";
 import express from "express";
 import { VERSION } from "../version.js";
+import { firebaseAccount } from "./firebase.js";
 import pg from "pg";
 import {
   createHash,
@@ -951,7 +952,14 @@ export class CoreBridge {
         true,
         409,
       );
-    const service = JSON.parse(required("FIREBASE_SERVICE_ACCOUNT_JSON"));
+    const service = firebaseAccount();
+    if (!service)
+      throw new AgentError(
+        "PUSH_NOT_CONFIGURED",
+        "Ride App push is not configured.",
+        true,
+        503,
+      );
     if (!this.tokens || this.tokens.expiry < now() + 60000) {
       const encode = (v: unknown) =>
         Buffer.from(JSON.stringify(v)).toString("base64url");
@@ -992,6 +1000,7 @@ export class CoreBridge {
               data: {
                 type: "ride_agent",
                 event_id: event.id,
+                event_kind: event.kind,
                 ...(event.portfolio_id
                   ? { portfolio_id: event.portfolio_id }
                   : {}),
@@ -1066,7 +1075,7 @@ export class CoreBridge {
           user_id: input.user_id,
         });
         return {
-          configured: !!process.env.FIREBASE_SERVICE_ACCOUNT_JSON,
+          configured: firebaseAccount() !== null,
           device_registered: Array.isArray(tokens) && tokens.length > 0,
         };
       }

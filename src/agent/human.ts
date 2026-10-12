@@ -134,6 +134,7 @@ export function mountHumanConfirmation(
     "revoke",
     "portfolio",
     "updates",
+    "update",
   ]);
   app.post("/agent/human/:operation", async (req, res) => {
     try {

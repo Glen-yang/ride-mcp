@@ -602,6 +602,26 @@ export class AgentService {
       return this.proposalView(p, s);
     });
   }
+  async update(user: string, eventId: string): Promise<Result> {
+    return this.repository.transact(user, async (s) => {
+      const update = s.updates.find((x) => x.id === eventId);
+      if (!update)
+        throw new AgentError(
+          "NOT_FOUND",
+          "Report not found for this Ride account.",
+          false,
+          404,
+        );
+      const {
+        notification,
+        notification_attempts,
+        next_notification_at,
+        notification_error,
+        ...record
+      } = update;
+      return result({ update: record });
+    });
+  }
   async confirm(user: string, id: string, hash: string): Promise<Result> {
     return this.repository.transact(user, async (s) => {
       const p = s.proposals.find((x) => x.id === id);

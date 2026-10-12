@@ -136,7 +136,10 @@ export function backendApp(
   app.post("/agent/human/:operation", async (req, res) => {
     try {
       const user = res.locals.user;
-      if (readOnly && !["updates", "portfolio"].includes(req.params.operation))
+      if (
+        readOnly &&
+        !["updates", "update", "portfolio"].includes(req.params.operation)
+      )
         throw new AgentError(
           "READ_ONLY",
           "Trading is not enabled on this deployment.",
@@ -200,6 +203,11 @@ export function backendApp(
         case "updates":
           value = await service.tool(user, "get_updates", req.body);
           break;
+        case "update": {
+          const a = z.object({ event_id: id }).strict().parse(req.body);
+          value = await service.update(user, a.event_id);
+          break;
+        }
         case "portfolio":
           value = await service.tool(user, "get_portfolio", req.body);
           break;
