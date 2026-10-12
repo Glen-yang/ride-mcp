@@ -56,6 +56,9 @@ it("registry setup upgrades the released v0.3.1 GitHub installation without touc
     });
     assert.deepEqual(config.mcpServers.other, { url: "https://other.test" });
     assert.equal(config.setting, 42);
+    // Retrying login runs setup again with the published npm registration.
+    await setup("cursor", server, home);
+    assert.deepEqual(JSON.parse(await readFile(path, "utf8")), config);
   }));
 
 it("keeps explicit GitHub distribution available and rejects misspelled distribution before writing", async () => {

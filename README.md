@@ -2,16 +2,16 @@
 
 Ride Agent V3 selects a diversified trader basket and manages owned Perps and prediction-market copies. It exposes fifteen MCP tools, equivalent JSON CLI commands, compact MCP App cards, and a portable agent Skill.
 
-**Release status:** the hosted V3 endpoint is `https://mcp.onride.me/mcp`. Account readiness and Ride approval govern trading. The CLI and Skill are distributed as `@glen-yang/ride-cli`; client installation targets the same production MCP endpoint.
+**Release status:** the hosted V3 endpoint is `https://mcp.onride.me/mcp`. Account readiness and Ride approval govern trading. The CLI and Skill are distributed as `@glenyang/ride-cli`; client installation targets the same production MCP endpoint.
 
 ## One-command installation
 
 Node.js 20+, npm and your chosen AI client are required. Run the one command for your client to install the Skill, connect the production MCP and start login:
 
 ```sh
-npx -y @glen-yang/ride-cli@0.3.2 setup --client codex --trade
-npx -y @glen-yang/ride-cli@0.3.2 setup --client claude-code --trade
-npx -y @glen-yang/ride-cli@0.3.2 setup --client cursor --trade
+npx -y @glenyang/ride-cli@0.3.2 setup --client codex --trade
+npx -y @glenyang/ride-cli@0.3.2 setup --client claude-code --trade
+npx -y @glenyang/ride-cli@0.3.2 setup --client cursor --trade
 ```
 
 Complete login and authorization with your own Ride account in the browser, then restart your AI client or open a new chat. Codex uses native HTTP MCP and its own OAuth credential storage. If the Codex CLI is absent, setup runs the official `@openai/codex@0.162.0` CLI through npx automatically; no separate global CLI installation is needed.
@@ -28,7 +28,7 @@ For the Skill alone:
 npx skills add Glen-yang/ride-mcp --skill ride
 ```
 
-The Skill-only command does not register an MCP server. For standalone CLI commands, prefix the commands below with `npx -y @glen-yang/ride-cli@0.3.2`, or install the pinned package with `npm install -g @glen-yang/ride-cli@0.3.2` to obtain `ride`.
+The Skill-only command does not register an MCP server. For standalone CLI commands, prefix the commands below with `npx -y @glenyang/ride-cli@0.3.2`, or install the pinned package with `npm install -g @glenyang/ride-cli@0.3.2` to obtain `ride`.
 
 ## Use
 

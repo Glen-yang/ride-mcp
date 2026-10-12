@@ -14,7 +14,7 @@ import { fileURLToPath } from "node:url";
 import { randomBytes, createHash } from "node:crypto";
 import TOML from "@iarna/toml";
 import { serverUrl } from "./session.js";
-import { distributionPackage, VERSION } from "../version.js";
+import { distributionPackage, PACKAGE_NAME, VERSION } from "../version.js";
 
 export type ClientName = "codex" | "claude-code" | "cursor";
 const legacySkillHashes = new Set([
@@ -69,6 +69,7 @@ function managedStdio(
     [
       `github:Glen-yang/ride-mcp#v${version}`,
       `@glen-yang/ride-cli@${version}`,
+      `${PACKAGE_NAME}@${version}`,
     ].some(
       (pkg) =>
         JSON.stringify(current.args) ===

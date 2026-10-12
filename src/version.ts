@@ -1,11 +1,13 @@
 import { readFileSync } from "node:fs";
 
-export const VERSION: string = JSON.parse(
+const metadata = JSON.parse(
   readFileSync(new URL("../package.json", import.meta.url), "utf8"),
-).version;
+);
+export const VERSION: string = metadata.version;
+export const PACKAGE_NAME: string = metadata.name;
 
 export function distributionPackage(distribution: "github" | "npm"): string {
   return distribution === "npm"
-    ? `@glen-yang/ride-cli@${VERSION}`
+    ? `${PACKAGE_NAME}@${VERSION}`
     : `github:Glen-yang/ride-mcp#v${VERSION}`;
 }
