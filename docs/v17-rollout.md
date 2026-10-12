@@ -5,7 +5,7 @@ Complete the supplied conversational HTML in the independent Agent services. Kee
 ## Reviewed source
 
 - MCP branch `codex/ride-v17-complete`, based on the account/login fixes from PR 3. Its new changes are reviewed separately from those prerequisite fixes.
-- Core branch `codex/ride-rwa-worker-v17`, commit `112718ffeedeab040199736e8a35e0ccbbba1148`, PR 6. It modifies Agent execution handling and adds an internal-only API mode. Qualified markets remain opt-in and require an Agent binding.
+- Core branch `codex/ride-rwa-worker-v17`, commit `22cc5c0446432b94db88c7b1d48c2dc16b1104fd`, PR 6. It modifies Agent execution handling and adds an internal-only API mode. Qualified markets remain opt-in and require an Agent binding.
 - New Core gRPC initialization applies only Agent execution-table guards and leaves SQLx migration history unchanged. Lock/statement timeouts bound initialization. Non-Agent bindings retain their core-only market restrictions.
 
 ## Deployment sequence
@@ -17,7 +17,9 @@ Complete the supplied conversational HTML in the independent Agent services. Kee
 5. Once bridge/backend health and authenticated read probes pass, deploy `ride-mcp` from the same MCP commit. Verify release 0.4.0, OAuth metadata, MCP tool discovery, cards, owned account reads, deposit options/address/status, performance and report settings without placing orders.
 6. Compare legacy App service deployment IDs/configs against `output/deployment/v17-acceptance/legacy-deployment-baseline.json`, then check App health and representative read paths. Publish npm/GitHub 0.4.0 only after server acceptance; npm requires the publisher's per-release 2FA.
 
-The first Core acceptance request returned “Cancelled — the user did not approve this action. No changes were made.” Staging remains pending. Obtain the user approval required by that tool before committing it; do not bypass the rejection with another deployment interface.
+The connector's approval layer returned “Cancelled — the user did not approve this action. No changes were made.” The user explicitly approved deployment in this chat, and the first Core plus Node staging was subsequently submitted through Railway. The Rust Docker build exposed a missing SQL file: `deploy/` is excluded from the image context. Revision `22cc5c0` moves the guard SQL into gRPC's source tree while keeping the private deployment directory excluded; gRPC compilation and the disposable-schema guard test passed again. The corrected three-service source patch is ready for submission from the reviewed Railway page.
+
+Bridge and backend are running 0.4.0. Until the corrected Core is ready, bridge temporarily retains `https://api.fiammalabs.io` with `RIDE_AGENT_RWA_ENABLED=false`; the public MCP gateway remains 0.3.4. Switch the bridge and enable RWA only after Core readiness and guard/worker acceptance, then update the gateway.
 
 ## Validation completed
 
