@@ -18,13 +18,15 @@ import { distributionPackage, VERSION } from "../version.js";
 
 export type ClientName = "codex" | "claude-code" | "cursor";
 const legacySkillHashes = new Set([
+  // Unmodified v0.3.1 Skill tree.
+  "79f8eb9333ba4b463daa78f1e97c010861ed81c0c6297814e180ca9fc20843f6",
   // Unmodified v0.3.0 Skill tree.
   "c128e338d1ba8c5b35cb752e67be9abb497a060a0b0826c567bf0a464d55b0c2",
   // Complete, unmodified Skill trees shipped in v0.2.1 and v0.2.2.
   "dc89f7beb9d8e2cb31f2dabfac80b18e546b2cd24f4318f1b84a5e1f93a65619",
   "34e2442586e5136274d18e0037bae2c3c9eaefca9d37a3be597ec79f1081e432",
 ]);
-const managedVersions = ["0.2.1", "0.2.2", "0.2.3", "0.3.0", VERSION];
+const managedVersions = ["0.2.1", "0.2.2", "0.2.3", "0.3.0", "0.3.1", VERSION];
 
 async function skillHash(root: string): Promise<string | undefined> {
   try {
@@ -79,7 +81,7 @@ export async function setup(
   client: ClientName,
   server: string,
   home?: string,
-  distribution: "github" | "npm" = "github",
+  distribution: "github" | "npm" = "npm",
 ): Promise<{
   client: ClientName;
   config: string;

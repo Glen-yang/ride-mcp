@@ -61,7 +61,7 @@ try {
       text.includes(
         client === "codex"
           ? 'url = "https://ride.test/mcp"'
-          : `github:Glen-yang/ride-mcp#v${version}`,
+          : `@glen-yang/ride-cli@${version}`,
       ),
     );
     assert(
