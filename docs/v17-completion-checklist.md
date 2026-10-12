@@ -18,12 +18,14 @@ Observed validation before deployment: 92 TypeScript tests passed with dedicated
 
 Browser acceptance after the final edits passed: single Fixed trader selection and replacement, amount/leverage recalculation, zero-balance rejection, funding-route restrictions and QR/status/resume, immutable proposal confirmation, unrecalculated edits staying disabled after overlap acknowledgment, profit/account-value switching, notification settings, and 390px layout without horizontal overflow. Evidence is in the ignored `output/deployment/v17-acceptance/` directory.
 
-Still required:
-- Deploy independent Agent Core API/gRPC and Agent worker, then the three MCP services.
-- Live metadata/discovery and authenticated account/funding/report probes.
-- Verify old App deployment parity and health after release.
-- Registry publish requires npm per-release human 2FA.
+Production checks completed: independent Core API/gRPC and dedicated worker are online with one running replica each; service authentication and API route isolation passed; four Agent guards are present and the shared 206-entry migration registry is unchanged. All three MCP services run Fixed safety revision `271081b` and release 0.4.0. Public health/OAuth metadata, 21-tool discovery and reviewed-card hash parity passed. Bridge uses the independent Core with RWA enabled, returned 30 candidates and nine funding routes. Authenticated App copy/portfolio reads have complete coverage; owned deposit address, QR and awaiting-deposit status passed. Empty performance/daily-check-in behavior and notification delivery readiness passed for the signed-in account without an Agent portfolio. Official RWA taxonomy and `xyz` USDC metadata passed; the current strict pool has no RWA-tagged traders and correctly returns no executable RWA plan. Funded fills and physical pushes remain unverified.
+
+Live new-flow acceptance: a 500 USDC single-trader preview returned nine eligible crypto candidates, one Fixed allocation with 20 USDC entry margin, and the opt-in pause/70% emergency-exit policy. No order was submitted.
+
+Account/device acceptance still required:
 - Native report PR 20 is prepared but still separate from the MCP release.
 - Actual wallet transfer, real funded fills and physical-device push require appropriate account/device acceptance; fixture results do not establish those outcomes.
 
-Railway's connector returned cancellation from its approval layer; the user approved deployment, and the first Core/Node patches were subsequently applied in Railway. Node bridge/backend 0.4.0 is healthy. The first Rust build failed because Docker excluded the initialization SQL under `deploy/`; Core revision `22cc5c0` embeds that SQL from the gRPC source directory and passed compilation plus the disposable guard test. The corrected Core API/gRPC/Agent worker source patch is pending submission. The bridge temporarily uses the previous Core with new RWA disabled; the public gateway remains 0.3.4. See `v17-rollout.md` for the exact sequence and boundary.
+Distribution gate: publish only after server acceptance, complete npm's per-release publisher 2FA, and verify the publicly downloaded package. The release receipt records registry/GitHub URLs separately from runtime and device acceptance.
+
+The six-service Agent rollout has settled. Existing App API/gRPC/worker deployment IDs match the baseline and App readiness/GraphQL reads returned 200; scheduler had a separate deployment outside this Agent patch. Railway permission was explicitly changed by the user to a plugin-specific `Allow all actions` override to remove repeated deployment confirmation. See `v17-rollout.md` for deployment evidence, sequence and rollback boundary.
