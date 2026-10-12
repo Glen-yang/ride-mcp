@@ -15,6 +15,13 @@ export interface SourceSnapshot {
   complete: boolean;
 }
 export interface VenueAdapter {
+  depositOptions?(): Promise<{ routes: any[]; notes?: string[] }>;
+  depositAddress?(
+    user: string,
+    input: any,
+    portfolioId?: string,
+  ): Promise<import("./deposits.js").Deposit>;
+  depositStatus?(deposit: import("./deposits.js").Deposit): Promise<any>;
   sourceFills?(
     trader: Candidate,
     start: number,
@@ -61,6 +68,7 @@ export interface VenueAdapter {
   ): Promise<void>;
 }
 export interface SourceFill {
+  start_quantity?: string;
   id: string;
   key: string;
   quantity: string;
@@ -129,6 +137,22 @@ export class BridgeAdapter implements VenueAdapter {
         response.status,
       );
     return data as T;
+  }
+  depositOptions() {
+    return this.call<{ routes: any[]; notes?: string[] }>(
+      "deposit_options",
+      {},
+    );
+  }
+  depositAddress(user: string, input: any, portfolioId?: string) {
+    return this.call<import("./deposits.js").Deposit>("deposit_address", {
+      user_id: user,
+      input,
+      portfolio_id: portfolioId,
+    });
+  }
+  depositStatus(deposit: import("./deposits.js").Deposit) {
+    return this.call<any>("deposit_status", { deposit });
   }
   candidates() {
     return this.call<Candidate[]>("candidates", {});

@@ -5,10 +5,43 @@ import { backendApp } from "../src/agent/backend.js";
 import { AgentService } from "../src/agent/service.js";
 import { AgentRunner } from "../src/agent/runner.js";
 import { Cursor, MemoryRepository } from "../src/agent/repository.js";
+import { uid, now } from "../src/agent/domain.js";
 import { FakeAdapter, candidate } from "../src/agent/fixtures.js";
 const repository = new MemoryRepository(),
   adapter = new FakeAdapter();
-adapter.pool = [1, 2, 3, 4, 5, 6, 7, 8].map(candidate);
+adapter.pool = Array.from({ length: 24 }, (_, i) => candidate(i + 1));
+adapter.depositOptions = async () => ({
+  routes: [
+    {
+      market: "perps",
+      asset: "USDC",
+      network: "Arbitrum",
+      activation_required: true,
+    },
+    {
+      market: "prediction",
+      asset: "USDT",
+      network: "Base",
+      activation_required: false,
+    },
+  ],
+  notes: ["Local fixture only. Do not send money to fixture addresses."],
+});
+adapter.depositAddress = async (_user, input) => ({
+  id: uid("deposit"),
+  market: input.market,
+  asset: input.asset,
+  network: input.network,
+  address: "0x" + "5".repeat(40),
+  provider: input.market === "prediction" ? "polymarket_bridge" : "wallet",
+  created_at: now(),
+});
+adapter.depositStatus = async (d) => ({
+  deposit_id: d.id,
+  status: "awaiting_deposit",
+  available_to_copy: false,
+  next_action: "Fixture address only; no funds were sent.",
+});
 adapter.snap.available_usdc = "0";
 const port = Number(process.env.RIDE_PREVIEW_PORT ?? 17830),
   base = `http://127.0.0.1:${port}`;

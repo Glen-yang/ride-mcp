@@ -52,6 +52,14 @@ export interface HoldingCheckpoint {
 }
 export interface State {
   preferences: Preferences | null;
+  recommendation_batches?: {
+    preference_hash: string;
+    batches: string[][];
+    change_used: boolean;
+    active_index: number;
+  };
+  daily_checkin_days?: Record<string, string>;
+  deposits?: import("./deposits.js").Deposit[];
   plans: Plan[];
   portfolios: Portfolio[];
   proposals: Proposal[];

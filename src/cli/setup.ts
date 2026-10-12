@@ -18,6 +18,8 @@ import { distributionPackage, PACKAGE_NAME, VERSION } from "../version.js";
 
 export type ClientName = "codex" | "claude-code" | "cursor";
 const legacySkillHashes = new Set([
+  // Unmodified v0.3.4 Skill tree.
+  "d460b444e14160d31557f8e1067ee6a12d3c6b1a38d9fbee8f0a4c9fc6c42d89",
   // Unmodified v0.3.3 Skill tree.
   "7cb7c4a8623ccc6208dc8f7503183b57f9435706c6abdbc016a85c30361f791c",
   // Unmodified v0.3.2 Skill tree.
@@ -38,6 +40,7 @@ const managedVersions = [
   "0.3.1",
   "0.3.2",
   "0.3.3",
+  "0.3.4",
   VERSION,
 ];
 

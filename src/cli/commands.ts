@@ -25,7 +25,7 @@ import { onboard } from "./onboarding.js";
 import { selectClient } from "./clients.js";
 import { VERSION } from "../version.js";
 
-export const HELP = `Ride CLI\n  Run with no arguments to install Skill + MCP and start browser login.\n  setup [--client codex|claude-code|cursor|auto] [--trade] [--skip-login] [--server URL] [--distribution npm|github]\n  login --server https://YOUR-RIDE-HOST/mcp [--trade]\n  preferences --json '{"budget_usdc":"500","loss_trigger_pct":20,"market":"perps"}'\n  recommend | trader TRADER_ID | portfolio [PORTFOLIO_ID] | review [PORTFOLIO_ID]\n  copy start PLAN_ID | copy update COPY_ID --json '{"leverage_cap":5}'\n  copy stop COPY_ID [--mode wind_down|close_now]\n  updates [--cursor CURSOR] [--limit 20] | position close POSITION_ID\n  plan recalculate PLAN_ID [--json ALLOCATIONS_JSON]\n  performance [PORTFOLIO_ID] [--period daily|weekly|inception]\n  diagnose COPY_ID --start-at MILLISECONDS --end-at MILLISECONDS\n  copies [--status open] [--limit 100] [--offset 0]\n  notifications [--json SETTINGS_JSON]\n  proposal PROPOSAL_ID | confirm PROPOSAL_ID\n  mcp [--server URL]\nSetup installs Skill + MCP and starts browser login (default server: https://mcp.onride.me/mcp).\nJSON output is default. --pretty renders a human-readable view. Confirmation opens Ride.\n`;
+export const HELP = `Ride CLI\n  Run with no arguments to install Skill + MCP and start browser login.\n  setup [--client codex|claude-code|cursor|auto] [--trade] [--skip-login] [--server URL] [--distribution npm|github]\n  login --server https://YOUR-RIDE-HOST/mcp [--trade]\n  preferences --json '{"budget_usdc":"500","loss_trigger_pct":20,"market":"perps"}'\n  recommend | trader TRADER_ID | portfolio [PORTFOLIO_ID] | review [PORTFOLIO_ID]\n  copy start PLAN_ID | copy update COPY_ID --json '{"leverage_cap":5}'\n  copy stop COPY_ID [--mode wind_down|close_now]\n  updates [--cursor CURSOR] [--limit 20] | position close POSITION_ID\n  plan recalculate PLAN_ID [--json ALLOCATIONS_JSON]\n  performance [PORTFOLIO_ID] [--period daily|weekly|inception]\n  diagnose COPY_ID --start-at MILLISECONDS --end-at MILLISECONDS\n  copies [--status open] [--limit 100] [--offset 0]\n  notifications [--json SETTINGS_JSON]\n  proposal PROPOSAL_ID | confirm PROPOSAL_ID\n  mcp [--server URL]\n  deposit options | deposit address --json ROUTE | deposit status DEPOSIT_ID\n  portfolio update PORTFOLIO_ID --json CHANGES | daily [--timezone Asia/Shanghai]\nSetup installs Skill + MCP and starts browser login (default server: https://mcp.onride.me/mcp).\nJSON output is default. --pretty renders a human-readable view. Confirmation opens Ride.\n`;
 export function parseCommand(argv: string[]): {
   command: string;
   name?: ToolName;
@@ -65,6 +65,21 @@ export function parseCommand(argv: string[]): {
       throw new Error("--json requires an object");
     args = parsed;
   }
+  if (command === "deposit") {
+    if (positionals[1] === "options") name = "get_deposit_options";
+    else if (positionals[1] === "address") name = "get_deposit_address";
+    else if (positionals[1] === "status") {
+      name = "check_deposit_status";
+      args.deposit_id = positionals[2];
+    } else
+      throw new Error(
+        "Use deposit options, address --json ROUTE, or status DEPOSIT_ID",
+      );
+  }
+  if (command === "daily") {
+    name = "get_daily_checkin";
+    if (flags.timezone) args.timezone = flags.timezone;
+  }
   if (command === "preferences") name = "set_preferences";
   if (command === "plan" && positionals[1] === "recalculate") {
     name = "recalculate_plan";
@@ -90,7 +105,10 @@ export function parseCommand(argv: string[]): {
     name = "get_trader_profile";
     args.trader_id = positionals[1];
   }
-  if (command === "portfolio" || command === "review") {
+  if (command === "portfolio" && positionals[1] === "update") {
+    name = "update_portfolio";
+    args.portfolio_id = positionals[2];
+  } else if (command === "portfolio" || command === "review") {
     name = command === "portfolio" ? "get_portfolio" : "review_portfolio";
     if (positionals[1]) args.portfolio_id = positionals[1];
   }

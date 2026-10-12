@@ -49,6 +49,9 @@ export interface Candidate {
   venue_max_leverage: number;
   min_notional_usdc: string;
   last_trade_at: number | null;
+  asset_category?: "crypto" | "rwa" | "mixed" | "unknown";
+  execution_supported?: boolean;
+  asset_categories?: Record<string, "crypto" | "rwa" | "unknown">;
 }
 export interface Allocation {
   copy_id: string;
@@ -56,6 +59,11 @@ export interface Allocation {
   amount_usdc: string;
   leverage_cap: number;
   stop_loss_pct: number;
+  copy_mode?: "ride_recommends" | "fixed" | "proportional";
+  fixed_margin_usdc?: string;
+  proportional_multiplier?: number;
+  loss_policy?: "exit" | "pause_then_exit";
+  emergency_exit_pct?: number;
 }
 export interface Plan {
   id: string;
@@ -87,7 +95,13 @@ export interface Lot {
   funding: string;
 }
 export interface Sleeve extends Allocation {
-  state: "active" | "wind_down" | "closing" | "closed" | "loss_triggered";
+  state:
+    | "active"
+    | "wind_down"
+    | "closing"
+    | "closed"
+    | "loss_triggered"
+    | "risk_off";
   lots: Record<string, Lot>;
   intents: Record<string, PositionIntent>;
   initialized: boolean;
@@ -96,6 +110,10 @@ export interface Sleeve extends Allocation {
   last_source_at: number | null;
   replaced_at: number | null;
   reviewed_at?: number;
+  source_quantities?: Record<string, string>;
+  fixed_targets?: Record<string, string>;
+  fixed_seen_fills?: string[];
+  fixed_last_fill_at?: number;
 }
 export interface Aggregate {
   position_id: string;
@@ -121,6 +139,7 @@ export interface AccountSnapshot {
   quantity_decimals?: Record<string, number>;
   venue_accounts?: Record<string, string>;
   available_by_market?: Partial<Record<Venue, string>>;
+  available_by_scope?: Record<string, string>;
   chain_block?: number;
   max_leverages: Record<string, number>;
   min_notionals: Record<string, string>;
@@ -250,7 +269,9 @@ export function recommendedLeverage(
     c.atr_pct == null
       ? 3
       : Math.max(3, Math.min(8, Math.floor(12 / Math.max(c.atr_pct, 0.01))));
-  const cap = Math.min(c.venue_max_leverage, atrCap, riskCap);
+  const toleranceCap =
+    p.risk_tolerance === "low" ? 3 : p.risk_tolerance === "medium" ? 5 : 8;
+  const cap = Math.min(c.venue_max_leverage, atrCap, riskCap, toleranceCap);
   return cap >= 3 ? cap : null;
 }
 export function eligibleCandidates(
@@ -261,14 +282,20 @@ export function eligibleCandidates(
     .filter(
       (c) =>
         c.eligibility === "PASS" &&
+        c.execution_supported !== false &&
         c.expires_at > now() &&
         fresh(c.scored_at, 36 * 3600_000) &&
         (p.market === "both" || c.market === p.market) &&
+        (!p.asset_category ||
+          p.asset_category === "any" ||
+          (c.asset_category ?? "unknown") === p.asset_category) &&
         c.assets.length > 0 &&
         recommendedLeverage(p, c) !== null &&
         (c.market === "prediction" ||
           c.assets.every(
             (a) =>
+              (p.asset_category === "rwa" && c.asset_category === "rwa") ||
+              p.asset_category === "any" ||
               p.assets.includes(a) ||
               (p.allow_altcoins && !["BTC", "ETH"].includes(a)),
           )),
@@ -278,22 +305,50 @@ export function eligibleCandidates(
 export function recommend(p: Preferences, candidates: Candidate[]): Plan {
   const allowed = eligibleCandidates(p, candidates);
   const chosen: Candidate[] = [];
-  while (chosen.length < 6 && allowed.length) {
+  const maximum =
+    p.portfolio_kind === "single"
+      ? 1
+      : p.portfolio_kind === "basket"
+        ? (p.basket_size ?? 4)
+        : 6;
+  const minimum =
+    p.portfolio_kind === "single" ? 1 : p.portfolio_kind === "basket" ? 2 : 3;
+  if (maximum < minimum)
+    throw new AgentError(
+      "INVALID_BASKET",
+      "A basket needs at least two traders.",
+      false,
+      400,
+    );
+  while (chosen.length < maximum && allowed.length) {
     allowed.sort(
       (a, b) =>
         diversity(b, chosen) - diversity(a, chosen) || a.id.localeCompare(b.id),
     );
     const c = allowed.shift()!;
     const count = chosen.length + 1;
-    if (D(p.budget_usdc).div(count).lt(c.min_notional_usdc)) continue;
-    if (chosen.some((x) => D(p.budget_usdc).div(count).lt(x.min_notional_usdc)))
+    const minimumAmount = p.portfolio_kind
+      ? D.max(50, c.min_notional_usdc)
+      : D(c.min_notional_usdc);
+    if (D(p.budget_usdc).div(count).lt(minimumAmount)) continue;
+    if (
+      chosen.some((x) =>
+        D(p.budget_usdc)
+          .div(count)
+          .lt(
+            p.portfolio_kind
+              ? D.max(50, x.min_notional_usdc)
+              : x.min_notional_usdc,
+          ),
+      )
+    )
       continue;
     chosen.push(c);
   }
-  if (chosen.length < 3)
+  if (chosen.length < minimum)
     throw new AgentError(
       "NO_EXECUTABLE_PLAN",
-      "Fewer than three fresh, eligible traders fit this budget and market preference.",
+      `Fewer than ${minimum} fresh, eligible traders fit this budget and market preference.`,
     );
   if (
     p.market === "both" &&
@@ -318,6 +373,19 @@ export function recommend(p: Preferences, candidates: Candidate[]): Plan {
       amount_usdc: amounts[i],
       leverage_cap: recommendedLeverage(p, c)!,
       stop_loss_pct: 30,
+      ...(p.copy_mode ? { copy_mode: p.copy_mode } : {}),
+      ...(p.fixed_margin_usdc
+        ? { fixed_margin_usdc: cash(p.fixed_margin_usdc) }
+        : {}),
+      ...(p.proportional_multiplier
+        ? { proportional_multiplier: p.proportional_multiplier }
+        : {}),
+      ...(p.loss_policy
+        ? {
+            loss_policy: p.loss_policy,
+            emergency_exit_pct: p.emergency_exit_pct ?? 70,
+          }
+        : {}),
     })),
   };
 }
@@ -326,6 +394,8 @@ export function recommendationDiagnostics(
   p: Preferences,
   candidates: Candidate[],
 ) {
+  const minimum =
+    p.portfolio_kind === "single" ? 1 : p.portfolio_kind === "basket" ? 2 : 3;
   const marketRows = candidates.filter(
     (c) => p.market === "both" || c.market === p.market,
   );
@@ -345,23 +415,23 @@ export function recommendationDiagnostics(
   );
   const eligible = eligibleCandidates(p, candidates);
   const affordable = eligible.filter((c) =>
-    D(p.budget_usdc).div(3).gte(c.min_notional_usdc),
+    D(p.budget_usdc).div(minimum).gte(c.min_notional_usdc),
   );
   const blocker = !candidates.length
     ? "source_data_unavailable"
     : !marketRows.length
       ? "market_source_data_unavailable"
-      : freshRows.length < 3 && freshRows.length < marketRows.length
+      : freshRows.length < minimum && freshRows.length < marketRows.length
         ? "stale_source_scores"
-        : qualified.length < 3 && qualified.length < freshRows.length
+        : qualified.length < minimum && qualified.length < freshRows.length
           ? "source_eligibility"
-          : assets.length < 3 && assets.length < qualified.length
+          : assets.length < minimum && assets.length < qualified.length
             ? "asset_preferences"
-            : eligible.length < 3 && eligible.length < assets.length
+            : eligible.length < minimum && eligible.length < assets.length
               ? "risk_limits_or_missing_risk_data"
-              : eligible.length < 3
+              : eligible.length < minimum
                 ? "eligible_trader_supply"
-                : affordable.length < 3
+                : affordable.length < minimum
                   ? "budget_minimums"
                   : "basket_diversification";
   return {
@@ -372,7 +442,7 @@ export function recommendationDiagnostics(
     asset_matching_candidates: assets.length,
     eligible_candidates: eligible.length,
     budget_eligible_candidates: affordable.length,
-    minimum_basket_size: 3,
+    minimum_basket_size: minimum,
     blocker,
     funding_required: false,
     execution_available: false,
@@ -474,6 +544,33 @@ export function risk(
       "BUDGET_EXCEEDED",
       "Target gross exposure or gross margin exceeds the approved budget.",
     );
+  if (p.snapshot?.available_by_scope) {
+    const scopeMargin = new Map<string, ReturnType<typeof D>>(),
+      oldMargin = new Map<string, ReturnType<typeof D>>();
+    for (const a of next.filter((a) => a.market === "perps")) {
+      const scope = a.asset.includes(":") ? a.asset.split(":")[0] : "core";
+      scopeMargin.set(
+        scope,
+        (scopeMargin.get(scope) ?? D(0)).plus(a.margin_usdc),
+      );
+    }
+    for (const a of prior.filter((a) => a.market === "perps")) {
+      const scope = a.asset.includes(":") ? a.asset.split(":")[0] : "core";
+      oldMargin.set(scope, (oldMargin.get(scope) ?? D(0)).plus(a.margin_usdc));
+    }
+    for (const [scope, target] of scopeMargin)
+      if (
+        target.gt(
+          (oldMargin.get(scope) ?? D(0)).plus(
+            p.snapshot.available_by_scope[scope] ?? 0,
+          ),
+        )
+      )
+        throw new AgentError(
+          "SCOPED_COLLATERAL_REQUIRED",
+          "Fresh available collateral in the selected DEX is insufficient; another DEX's balance cannot fund this target.",
+        );
+  }
   for (const a of next) {
     const old = prior.find((x) => x.key === a.key);
     const reduces =
@@ -482,7 +579,12 @@ export function risk(
         .abs()
         .lte(D(old?.net_notional_usdc ?? 0).abs()) &&
       D(a.gross_notional_usdc).lte(old?.gross_notional_usdc ?? 0);
-    if (D(a.concentration_pct ?? 0).gt(60) && !reduces)
+    if (
+      D(a.concentration_pct ?? 0).gt(
+        p.preferences.portfolio_kind === "single" ? 100 : 60,
+      ) &&
+      !reduces
+    )
       throw new AgentError(
         "ASSET_CONCENTRATION",
         "An asset exceeds 60% of total gross sleeve exposure.",

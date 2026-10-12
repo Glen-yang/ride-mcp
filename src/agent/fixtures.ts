@@ -5,6 +5,7 @@ export function candidate(i: number): Candidate {
     id: `trader_${String(i).padStart(12, "0")}`,
     handle: `Trader ${i}`,
     market: "perps",
+    asset_category: "crypto",
     score: 90 - i,
     score_version: "strict_perp_v2_5_daily_live_v1",
     components: {
@@ -52,6 +53,10 @@ export function snapshot(): AccountSnapshot {
   };
 }
 export class FakeAdapter implements VenueAdapter {
+  sourceFills?: NonNullable<VenueAdapter["sourceFills"]>;
+  depositOptions?: NonNullable<VenueAdapter["depositOptions"]>;
+  depositAddress?: NonNullable<VenueAdapter["depositAddress"]>;
+  depositStatus?: NonNullable<VenueAdapter["depositStatus"]>;
   snap = snapshot();
   submitCount = 0;
   notifyCount = 0;
