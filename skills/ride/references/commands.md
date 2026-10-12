@@ -1,6 +1,6 @@
 # CLI equivalence
 
-Default output is JSON. Add `--pretty` for human-readable cards/tables. The CLI bin is `ride`; use `npx -y @glenyang/ride-cli@0.3.3` before each command until installed globally. Codex native HTTP MCP credentials are managed by Codex. For standalone CLI use, authenticate separately with `ride login --server https://mcp.onride.me/mcp --trade`. Claude/Cursor setup creates this CLI session automatically.
+Default output is JSON. Add `--pretty` for human-readable cards/tables. The CLI bin is `ride`; use `npx -y @glenyang/ride-cli@0.3.4` before each command until installed globally. Codex native HTTP MCP credentials are managed by Codex. For standalone CLI use, authenticate separately with `ride login --server https://mcp.onride.me/mcp --trade`. Claude/Cursor setup creates this CLI session automatically.
 
 | MCP tool | CLI |
 |---|---|
@@ -8,6 +8,7 @@ Default output is JSON. Add `--pretty` for human-readable cards/tables. The CLI 
 | recommend_traders | `ride recommend` |
 | get_trader_profile | `ride trader TRADER_ID` |
 | start_copy | `ride copy start PLAN_ID` |
+| get_my_copies | `ride copies --pretty [--status open] [--limit 100]` |
 | get_portfolio | `ride portfolio [PORTFOLIO_ID]` |
 | update_copy | `ride copy update COPY_ID --json '{"leverage_cap":5}'` |
 | stop_copy | `ride copy stop COPY_ID --mode wind_down` |

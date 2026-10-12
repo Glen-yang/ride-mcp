@@ -51,6 +51,32 @@ const pref = {
   assets: ["BTC", "ETH"],
   allow_altcoins: false,
 };
+it("distinguishes unavailable source scores from budget minimums without requesting funding", async () => {
+  const env = service();
+  env.adapter.pool = [];
+  const unavailable = await env.api.tool("alice", "recommend_traders", {
+    preferences: pref,
+  });
+  assert.equal(unavailable.status, "stale");
+  assert.equal(unavailable.error?.retryable, true);
+  assert.equal(
+    (unavailable.data.recommendation_diagnostics as any).blocker,
+    "source_data_unavailable",
+  );
+  assert.equal(
+    (unavailable.data.recommendation_diagnostics as any).funding_required,
+    false,
+  );
+  env.adapter.pool = [1, 2, 3].map(candidate);
+  const low = await env.api.tool("alice", "recommend_traders", {
+    preferences: { ...pref, budget_usdc: "20" },
+  });
+  assert.equal(
+    (low.data.recommendation_diagnostics as any).blocker,
+    "budget_minimums",
+  );
+  assert.equal(low.error?.retryable, false);
+});
 async function proposed() {
   const env = service();
   await env.api.tool("alice", "set_preferences", pref);

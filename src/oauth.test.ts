@@ -3,16 +3,11 @@ import { request as httpRequest } from "node:http";
 import type { AddressInfo } from "node:net";
 import type { Response } from "express";
 import { afterEach, describe, it } from "node:test";
+import { runInNewContext } from "node:vm";
 
 import type { OAuthClientInformationFull } from "@modelcontextprotocol/sdk/shared/auth.js";
-import {
-  createRideOAuthApprovalRouter,
-  RideOAuthProvider,
-} from "./oauth.js";
-import {
-  createRideHttpApp,
-  requestBodyErrorHandler,
-} from "./http_security.js";
+import { createRideOAuthApprovalRouter, RideOAuthProvider } from "./oauth.js";
+import { createRideHttpApp, requestBodyErrorHandler } from "./http_security.js";
 
 const client: OAuthClientInformationFull = {
   client_id: "test-client",
@@ -39,14 +34,95 @@ function createProvider() {
   });
 }
 
+it("retries a failed Privy initialization with a fresh client and deduplicates concurrent retries", async () => {
+  let html = "";
+  const response = {
+    status() {
+      return this;
+    },
+    type() {
+      return this;
+    },
+    send(value: string) {
+      html = value;
+    },
+  } as unknown as Response;
+  await createProvider().authorize(
+    client,
+    {
+      redirectUri: client.redirect_uris[0],
+      codeChallenge: "challenge",
+      scopes: ["ride:read"],
+    },
+    response,
+  );
+  const script = html
+    .match(/<script type="module">([\s\S]*?)<\/script>/)![1]
+    .replace(/^\s*import Privy[^\n]*\n/m, "");
+  let attempts = 0;
+  class MockPrivy {
+    async initialize() {
+      attempts++;
+      if (attempts === 1)
+        throw Object.assign(new Error("signal is aborted without reason"), {
+          name: "AbortError",
+        });
+    }
+  }
+  const element = {
+    value: "",
+    classList: { toggle() {} },
+    addEventListener() {},
+  };
+  const context: any = {
+    Privy: MockPrivy,
+    LocalStorage: class {},
+    URL,
+    document: { getElementById: () => element },
+    window: {
+      location: {
+        href: "https://ride.test/authorize",
+        origin: "https://ride.test",
+      },
+    },
+    sessionStorage: {
+      getItem() {
+        return null;
+      },
+    },
+  };
+  runInNewContext(
+    script + "\nglobalThis.testAuth = { initPrivy, formatAuthError };",
+    context,
+  );
+  await assert.rejects(context.testAuth.initPrivy(), /aborted/);
+  const [one, two] = await Promise.all([
+    context.testAuth.initPrivy(),
+    context.testAuth.initPrivy(),
+  ]);
+  assert.equal(one, two);
+  assert.equal(attempts, 2);
+  assert.match(
+    context.testAuth.formatAuthError({
+      name: "AbortError",
+      message: "signal is aborted without reason",
+    }),
+    /Privy timed out/,
+  );
+});
+
 describe("Ride OAuth scope enforcement", () => {
   it("rejects unsupported scopes before rendering consent", async () => {
     await assert.rejects(
-      createProvider().authorize(client, {
-        redirectUri: client.redirect_uris[0],
-        codeChallenge: "challenge",
-        scopes: ["ride:unknown"],
-      }, {} as Response),
+      createProvider().authorize(
+        client,
+        {
+          redirectUri: client.redirect_uris[0],
+          codeChallenge: "challenge",
+          scopes: ["ride:unknown"],
+        },
+        {} as Response,
+      ),
       { name: "InvalidScopeError" },
     );
   });

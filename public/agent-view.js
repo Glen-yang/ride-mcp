@@ -57,16 +57,58 @@ export function render(root, value, openLink = () => {}, callTool = () => {}) {
     return;
   }
   root.append(el("div", value.status, "status"));
+  const d = value.data ?? {};
+  if (d.account?.authenticated) {
+    root.append(
+      el(
+        "p",
+        `Signed in${d.account.display_name ? `: ${d.account.display_name}` : ""}`,
+        "muted",
+      ),
+    );
+  }
+  const appCopies =
+    d.app_copies ?? (d.query_scope === "ride_app_copies" ? d : null);
+  if (appCopies) {
+    const account = card("Your Ride App copies");
+    for (const [name, market] of [
+      ["Perps", appCopies.perps],
+      ["Prediction", appCopies.prediction],
+    ]) {
+      account.append(
+        row(`${name} copy configurations`, market?.configs?.length),
+        row(
+          `${name} enabled copies`,
+          market?.configs?.filter((c) => c.isEnabled).length,
+        ),
+        row(`${name} current copied positions`, market?.positions?.length),
+      );
+    }
+    account.append(
+      el(
+        "p",
+        appCopies.coverage_complete
+          ? "Account read complete. Manage these existing copies in Ride."
+          : "Account read incomplete. Missing copies or positions are unavailable.",
+        "muted",
+      ),
+    );
+    root.append(account);
+  }
   if (value.error) {
     root.append(el("p", value.error.message, "warning error"));
     return;
   }
-  const d = value.data ?? {};
   if (d.preferences) welcome(root, callTool, d.preferences);
   if (d.plan) {
     const plan = d.plan;
     root.append(
-      el("h1", "Your trader basket"),
+      el(
+        "h1",
+        d.query_scope === "agent_portfolio_and_ride_app"
+          ? "Saved basket preview"
+          : "Your trader basket",
+      ),
       el(
         "p",
         `${usdc(plan.preferences.budget_usdc)} · ${plan.preferences.market} · ${plan.allocations.length} traders`,
@@ -101,14 +143,15 @@ export function render(root, value, openLink = () => {}, callTool = () => {}) {
     refresh.addEventListener("click", () =>
       callTool("recalculate_plan", { plan_id: plan.id }),
     );
-    root.append(
-      planEditor(plan, d, callTool, start),
-      el(
-        "div",
-        "Preview works before funding. Fund the trading account in your Ride App, then refresh this saved plan and review a new proposal.",
-        "warning",
-      ),
-    );
+    root.append(planEditor(plan, d, callTool, start));
+    if (d.query_scope !== "agent_portfolio_and_ride_app")
+      root.append(
+        el(
+          "div",
+          "Preview works before funding. Fund the trading account in your Ride App, then refresh this saved plan and review a new proposal.",
+          "warning",
+        ),
+      );
     const actions = el("div", null, "actions");
     actions.append(start, refresh);
     root.append(actions);
