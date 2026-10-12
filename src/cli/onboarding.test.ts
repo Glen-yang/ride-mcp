@@ -20,6 +20,59 @@ import { distributionPackage } from "../version.js";
 import { parseCommand } from "./commands.js";
 
 const server = "https://mcp.onride.me/mcp";
+it("registry setup upgrades the released v0.3.1 GitHub installation without touching other clients", () =>
+  temporary(async (home) => {
+    await mkdir(join(home, ".cursor"));
+    await cp(
+      fileURLToPath(new URL("./fixtures/v031-skill/", import.meta.url)),
+      join(home, ".cursor/skills/ride"),
+      { recursive: true },
+    );
+    const path = join(home, ".cursor/mcp.json");
+    await writeFile(
+      path,
+      JSON.stringify({
+        setting: 42,
+        mcpServers: {
+          other: { url: "https://other.test" },
+          ride: {
+            command: "npx",
+            args: [
+              "-y",
+              "github:Glen-yang/ride-mcp#v0.3.1",
+              "mcp",
+              "--server",
+              server,
+            ],
+          },
+        },
+      }),
+    );
+    await setup("cursor", server, home);
+    const config = JSON.parse(await readFile(path, "utf8"));
+    assert.deepEqual(config.mcpServers.ride, {
+      command: "npx",
+      args: ["-y", distributionPackage("npm"), "mcp", "--server", server],
+    });
+    assert.deepEqual(config.mcpServers.other, { url: "https://other.test" });
+    assert.equal(config.setting, 42);
+    // Retrying login runs setup again with the published npm registration.
+    await setup("cursor", server, home);
+    assert.deepEqual(JSON.parse(await readFile(path, "utf8")), config);
+  }));
+
+it("keeps explicit GitHub distribution available and rejects misspelled distribution before writing", async () => {
+  assert.throws(
+    () =>
+      parseCommand(["setup", "--client", "cursor", "--distribution", "npn"]),
+    /npm or github/,
+  );
+  await temporary(async (home) => {
+    const result = await setup("cursor", server, home, "github");
+    const config = JSON.parse(await readFile(result.config, "utf8"));
+    assert.equal(config.mcpServers.ride.args[1], distributionPackage("github"));
+  });
+});
 const legacy = fileURLToPath(
   new URL("./fixtures/legacy-skill/", import.meta.url),
 );
@@ -53,7 +106,7 @@ it("upgrades the released v0.2.3 Skill and pinned stdio configuration without ch
     const config = JSON.parse(
       await readFile(join(home, ".cursor/mcp.json"), "utf8"),
     );
-    assert.equal(config.mcpServers.ride.args[1], distributionPackage("github"));
+    assert.equal(config.mcpServers.ride.args[1], distributionPackage("npm"));
     assert.deepEqual(config.mcpServers.other, { url: "https://other.test" });
     assert(
       (
@@ -184,7 +237,7 @@ it("Claude and Cursor automatically authenticate the CLI session used by their p
               command: "npx",
               args: [
                 "-y",
-                distributionPackage("github"),
+                distributionPackage("npm"),
                 "mcp",
                 "--server",
                 server,
@@ -263,10 +316,7 @@ it("upgrades released JSON stdio configurations to this distribution version", (
     const current = JSON.parse(await readFile(path, "utf8"));
     assert.equal(current.setting, 42);
     assert.equal(current.mcpServers.other.command, "other");
-    assert.equal(
-      current.mcpServers.ride.args[1],
-      distributionPackage("github"),
-    );
+    assert.equal(current.mcpServers.ride.args[1], distributionPackage("npm"));
   }));
 
 it("refuses customized Skill references without altering client configuration", () =>

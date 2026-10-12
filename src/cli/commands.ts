@@ -20,7 +20,7 @@ import { type ClientName } from "./setup.js";
 import { onboard } from "./onboarding.js";
 import { VERSION } from "../version.js";
 
-export const HELP = `Ride CLI\n  setup --client codex|claude-code|cursor [--trade] [--skip-login] [--server URL]\n  login --server https://YOUR-RIDE-HOST/mcp [--trade]\n  preferences --json '{"budget_usdc":"500","loss_trigger_pct":20,"market":"perps"}'\n  recommend | trader TRADER_ID | portfolio [PORTFOLIO_ID] | review [PORTFOLIO_ID]\n  copy start PLAN_ID | copy update COPY_ID --json '{"leverage_cap":5}'\n  copy stop COPY_ID [--mode wind_down|close_now]\n  updates [--cursor CURSOR] [--limit 20] | position close POSITION_ID\n  plan recalculate PLAN_ID [--json ALLOCATIONS_JSON]\n  performance [PORTFOLIO_ID] [--period daily|weekly|inception]\n  diagnose COPY_ID --start-at MILLISECONDS --end-at MILLISECONDS\n  notifications [--json SETTINGS_JSON]\n  proposal PROPOSAL_ID | confirm PROPOSAL_ID\n  mcp [--server URL]\nSetup installs Skill + MCP and starts browser login (default server: https://mcp.onride.me/mcp).\nJSON output is default. --pretty renders a human-readable view. Confirmation opens Ride.\n`;
+export const HELP = `Ride CLI\n  setup --client codex|claude-code|cursor [--trade] [--skip-login] [--server URL] [--distribution npm|github]\n  login --server https://YOUR-RIDE-HOST/mcp [--trade]\n  preferences --json '{"budget_usdc":"500","loss_trigger_pct":20,"market":"perps"}'\n  recommend | trader TRADER_ID | portfolio [PORTFOLIO_ID] | review [PORTFOLIO_ID]\n  copy start PLAN_ID | copy update COPY_ID --json '{"leverage_cap":5}'\n  copy stop COPY_ID [--mode wind_down|close_now]\n  updates [--cursor CURSOR] [--limit 20] | position close POSITION_ID\n  plan recalculate PLAN_ID [--json ALLOCATIONS_JSON]\n  performance [PORTFOLIO_ID] [--period daily|weekly|inception]\n  diagnose COPY_ID --start-at MILLISECONDS --end-at MILLISECONDS\n  notifications [--json SETTINGS_JSON]\n  proposal PROPOSAL_ID | confirm PROPOSAL_ID\n  mcp [--server URL]\nSetup installs Skill + MCP and starts browser login (default server: https://mcp.onride.me/mcp).\nJSON output is default. --pretty renders a human-readable view. Confirmation opens Ride.\n`;
 export function parseCommand(argv: string[]): {
   command: string;
   name?: ToolName;
@@ -45,6 +45,13 @@ export function parseCommand(argv: string[]): {
     } else positionals.push(x);
   }
   const command = positionals[0] ?? "help";
+  if (
+    command === "setup" &&
+    flags.distribution !== undefined &&
+    !["npm", "github"].includes(String(flags.distribution))
+  ) {
+    throw new Error("--distribution must be npm or github.");
+  }
   let name: ToolName | undefined;
   let args: Record<string, unknown> = {};
   if (flags.json) {
@@ -122,7 +129,7 @@ export async function runCli(argv: string[]): Promise<void> {
         await onboard(flags.client as ClientName, server as string, {
           trade: flags.trade === true,
           skipLogin: flags["skip-login"] === true,
-          distribution: flags.distribution === "npm" ? "npm" : "github",
+          distribution: flags.distribution === "github" ? "github" : "npm",
         }),
       ),
     );

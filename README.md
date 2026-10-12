@@ -2,21 +2,25 @@
 
 Ride Agent V3 selects a diversified trader basket and manages owned Perps and prediction-market copies. It exposes fifteen MCP tools, equivalent JSON CLI commands, compact MCP App cards, and a portable agent Skill.
 
-**Release status:** the hosted V3 endpoint is `https://mcp.onride.me/mcp`. Account readiness and Ride approval govern trading. The npm registry package is not published yet; use the pinned GitHub distribution below.
+**Release status:** the hosted V3 endpoint is `https://mcp.onride.me/mcp`. Account readiness and Ride approval govern trading. The CLI and Skill are distributed as `@glenyang/ride-cli`; client installation targets the same production MCP endpoint.
 
 ## One-command installation
 
-Node.js 20+, npm and your chosen AI client are required. Install the Skill, connect the production MCP and start login in one command:
+Node.js 20+, npm and your chosen AI client are required. Run the one command for your client to install the Skill, connect the production MCP and start login:
 
 ```sh
-npx -y github:Glen-yang/ride-mcp#v0.3.1 setup --client codex --trade
+npx -y @glenyang/ride-cli@0.3.2 setup --client codex --trade
+npx -y @glenyang/ride-cli@0.3.2 setup --client claude-code --trade
+npx -y @glenyang/ride-cli@0.3.2 setup --client cursor --trade
 ```
 
-Complete login and authorization with your own Ride account in the browser, then restart Codex or open a new chat. Codex uses native HTTP MCP and its own OAuth credential storage. If the Codex CLI is absent, setup runs the official `@openai/codex@0.162.0` CLI through npx automatically; no separate global CLI installation is needed.
+Complete login and authorization with your own Ride account in the browser, then restart your AI client or open a new chat. Codex uses native HTTP MCP and its own OAuth credential storage. If the Codex CLI is absent, setup runs the official `@openai/codex@0.162.0` CLI through npx automatically; no separate global CLI installation is needed.
 
 Use `--client claude-code` or `--client cursor` for those clients; their stdio MCP uses this pinned Ride CLI and its private OAuth session. Setup logs in automatically for all three clients. `--trade` requests read and proposal access; omit it for read access. Execution still requires Ride approval. `--server https://YOUR-RIDE-HOST/mcp` selects another V3 deployment. Add `--skip-login` for unattended configuration only.
 
-Setup preserves unrelated settings, upgrades unmodified v0.2.1/v0.2.2 installations and refuses to overwrite a foreign `ride` entry or customized Skill. If browser login is cancelled or fails, rerun the same command to retry; the installed configuration is retained. Restart your client after setup.
+Setup preserves unrelated settings, upgrades unmodified managed installations and refuses to overwrite a foreign `ride` entry or customized Skill. If browser login is cancelled or fails, rerun the same command to retry; the installed configuration is retained. Restart your client after setup.
+
+Registry installation is the default. The pinned GitHub source remains available with `npx -y github:Glen-yang/ride-mcp#v0.3.2 setup --client CLIENT --trade --distribution github`. Other clients that support remote Streamable HTTP MCP with OAuth can connect to `https://mcp.onride.me/mcp`; their registration and consent interface is managed by that client. The installer currently configures Codex, Claude Code and Cursor.
 
 For the Skill alone:
 
@@ -24,7 +28,7 @@ For the Skill alone:
 npx skills add Glen-yang/ride-mcp --skill ride
 ```
 
-The Skill-only command does not register an MCP server. For standalone CLI commands, prefix the commands below with `npx -y github:Glen-yang/ride-mcp#v0.3.1`, or install the pinned repository with `npm install -g github:Glen-yang/ride-mcp#v0.3.1` to obtain `ride`.
+The Skill-only command does not register an MCP server. For standalone CLI commands, prefix the commands below with `npx -y @glenyang/ride-cli@0.3.2`, or install the pinned package with `npm install -g @glenyang/ride-cli@0.3.2` to obtain `ride`.
 
 ## Use
 

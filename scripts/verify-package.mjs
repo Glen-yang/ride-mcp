@@ -46,7 +46,7 @@ try {
     );
     assert(help.includes("Ride CLI"));
   }
-  const root = join(temp, "node_modules/@glen-yang/ride-cli");
+  const root = join(temp, "node_modules", packed.name);
   const { version } = JSON.parse(
     await readFile(join(root, "package.json"), "utf8"),
   );
@@ -61,7 +61,7 @@ try {
       text.includes(
         client === "codex"
           ? 'url = "https://ride.test/mcp"'
-          : `github:Glen-yang/ride-mcp#v${version}`,
+          : `${packed.name}@${version}`,
       ),
     );
     assert(
