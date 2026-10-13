@@ -174,7 +174,33 @@ export function render(root, value, openLink = () => {}, callTool = () => {}) {
     }
     root.append(c);
   }
-  if (d.preferences) welcome(root, callTool, d.preferences);
+  if (d.preference_collection && !d.preference_collection.ready) {
+    const collection = d.preference_collection;
+    root.append(
+      el("p", collection.questions.map((q) => q.question).join(" "), "warning"),
+    );
+    welcome(root, callTool, collection.answers);
+  } else if (d.preferences) welcome(root, callTool, d.preferences);
+  if (d.funding) {
+    const c = card("Fund your trading account"),
+      f = d.funding;
+    c.append(
+      row("Amount", usdc(f.amount_usdc)),
+      row("Status", f.status),
+      row("Destination", f.destination),
+    );
+    const b = el("button", "Review and confirm funding in Ride");
+    b.addEventListener("click", () => openLink(f.confirmation_url));
+    c.append(
+      b,
+      el(
+        "p",
+        "No funds move until you confirm in Ride. Submitted or uncertain requests must be checked before retrying.",
+        "muted",
+      ),
+    );
+    root.append(c);
+  }
   if (d.plan) {
     const plan = d.plan;
     root.append(
@@ -233,7 +259,7 @@ export function render(root, value, openLink = () => {}, callTool = () => {}) {
       root.append(
         el(
           "div",
-          "Preview works before funding. Fund the trading account in your Ride App, then refresh this saved plan and review a new proposal.",
+          "Preview works before funding. Use the Ride funding confirmation page to fund and activate the trading account, then refresh this saved plan and review a new proposal.",
           "warning",
         ),
       );
@@ -621,18 +647,13 @@ function welcome(root, callTool, pref = {}) {
     ),
   );
   const form = card("Your preferences");
-  const budget = field(
-    form,
-    "Budget · USDC",
-    "text",
-    pref.budget_usdc ?? "500",
-  );
+  const budget = field(form, "Budget · USDC", "text", pref.budget_usdc ?? "");
   budget.inputMode = "decimal";
   const loss = field(
     form,
     "Portfolio loss trigger · %",
     "number",
-    pref.loss_trigger_pct ?? 40,
+    pref.loss_trigger_pct ?? "",
   );
   loss.min = "1";
   loss.max = "100";
@@ -640,11 +661,12 @@ function welcome(root, callTool, pref = {}) {
     form,
     "Market",
     [
+      ["", "Choose a market"],
       ["perps", "Perps"],
       ["prediction", "Prediction"],
       ["both", "Both markets"],
     ],
-    pref.market ?? "perps",
+    pref.market ?? "",
   );
   const assets = field(
     form,
@@ -725,6 +747,17 @@ function welcome(root, callTool, pref = {}) {
     pref.loss_policy ?? "pause_then_exit",
   );
   const b = el("button", "View traders first");
+  const validatePreferences = () => {
+    b.disabled =
+      !budget.value.trim() ||
+      Number(budget.value) <= 0 ||
+      Number(loss.value) < 1 ||
+      Number(loss.value) > 100 ||
+      !market.value;
+  };
+  for (const input of [budget, loss, market])
+    input.addEventListener("input", validatePreferences);
+  validatePreferences();
   b.addEventListener("click", () =>
     callTool("recommend_traders", {
       batch_action: "first",
@@ -1427,6 +1460,30 @@ function renderDeposit(root, deposit, callTool) {
     callTool("check_deposit_status", { deposit_id: deposit.id }),
   );
   c.append(b);
+  if (deposit.provider === "wallet") {
+    const amount = field(
+      c,
+      "Amount to move into trading · USDC",
+      "text",
+      deposit.amount_usdc ?? "",
+    );
+    amount.inputMode = "decimal";
+    const prepare = el("button", "Review trading-account funding", "secondary");
+    prepare.addEventListener("click", () =>
+      callTool("prepare_deposit", {
+        deposit_id: deposit.id,
+        amount_usdc: amount.value.trim(),
+      }),
+    );
+    const validate = () => {
+      prepare.disabled =
+        !/^\d+(\.\d{1,6})?$/.test(amount.value.trim()) ||
+        Number(amount.value) < 5;
+    };
+    amount.addEventListener("input", validate);
+    validate();
+    c.append(prepare);
+  }
   root.append(c);
 }
 function renderDiagnostic(root, d) {

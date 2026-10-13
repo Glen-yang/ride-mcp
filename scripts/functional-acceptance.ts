@@ -40,6 +40,8 @@ const temp = await mkdtemp(join(tmpdir(), "ride-functional-"));
 const repo = new PgRepository(databaseUrl);
 const users = {
   alice: randomUUID(),
+  preferences: randomUUID(),
+  funding: randomUUID(),
   bob: randomUUID(),
   unknown: randomUUID(),
   loss: randomUUID(),
@@ -137,7 +139,8 @@ class SimulatedVenue implements VenueAdapter {
       created_at: now(),
     };
   }
-  async depositStatus(deposit: any) {
+  fundingOperation?: VenueAdapter["fundingOperation"];
+  async depositStatus(deposit: any): Promise<any> {
     return {
       deposit_id: deposit.id,
       status: "awaiting_deposit",
@@ -504,10 +507,10 @@ try {
     });
     assert.deepEqual(mcp.structuredContent, guide);
     assert.deepEqual(await cli(["guide", "--server", base + "/mcp"]), guide);
-    assert.equal((await alice.client.listTools()).tools.length, 22);
+    assert.equal((await alice.client.listTools()).tools.length, 24);
     assert(alice.client.getInstructions()?.includes("get_ride_guide"));
     assert.equal(guide.protocol, "ride-guide-v1");
-    return { release: guide.release, sha256: guide.sha256, tools: 22 };
+    return { release: guide.release, sha256: guide.sha256, tools: 24 };
   });
   await check("01 偏好：500 USDC / 20% / BTC ETH", async () => {
     const v = await ok(alice.client, "set_preferences", pref);
@@ -1490,6 +1493,120 @@ try {
     assert.ok(daily.data.daily_checkin);
     return { cli_contracts: true };
   });
+  await check("36 推荐缺失偏好返回问题，分次保存并保留已有答案", async () => {
+    const user = await oauth("preferences");
+    const first = await ok(user.client, "recommend_traders", {});
+    assert.equal(first.status, "requires_preferences");
+    assert.deepEqual(first.data.preference_collection.missing_fields, [
+      "budget_usdc",
+      "loss_trigger_pct",
+      "market",
+    ]);
+    await ok(user.client, "set_preferences", { budget_usdc: "500" });
+    const partial = await ok(user.client, "get_preferences", {});
+    assert.deepEqual(partial.data.preference_collection.missing_fields, [
+      "loss_trigger_pct",
+      "market",
+    ]);
+    await ok(user.client, "set_preferences", {
+      loss_trigger_pct: 20,
+      market: "perps",
+    });
+    const plan = await ok(user.client, "recommend_traders", {});
+    assert.equal(plan.data.plan.preferences.budget_usdc, "500");
+    return {
+      missing_questions: true,
+      partial_persistence: true,
+      no_repeated_budget: true,
+    };
+  });
+  await check(
+    "37 充值方案与人类签名入口隔离，真实 HTTP/Pg 并发只提交一次",
+    async () => {
+      const user = await oauth("funding");
+      const deposit = (
+        await ok(user.client, "get_deposit_address", {
+          market: "perps",
+          asset: "USDC",
+          network: "Arbitrum",
+        })
+      ).data.deposit;
+      let submits = 0;
+      venue.fundingOperation = async (operation, owner, input) => {
+        assert.equal(owner, users.funding);
+        if (operation === "submit") {
+          submits++;
+          return {
+            submitted: true,
+            transaction_hash: "0x" + "a".repeat(64),
+            receipt_status: "0x1",
+          };
+        }
+        return {
+          amount_usdc: input.amount_usdc,
+          wallet: { master: deposit.address },
+          requires_signature: true,
+          typed_data: { message: { owner: deposit.address } },
+          permit_nonce: "0",
+          permit_deadline: Math.floor(now() / 1000) + 300,
+        };
+      };
+      venue.depositStatus = async (deposit) => ({
+        deposit_id: deposit.id,
+        trading_balance_usdc: "0",
+        available_to_copy: false,
+      });
+      const prepared = await ok(user.client, "prepare_deposit", {
+        deposit_id: deposit.id,
+        amount_usdc: "10",
+      });
+      assert.equal(prepared.status, "requires_confirmation");
+      assert.equal(submits, 0);
+      assert.equal(
+        JSON.stringify(prepared).includes("signing_challenge"),
+        false,
+      );
+      const view = await human("funding", "funding", {
+        deposit_id: deposit.id,
+      });
+      assert.equal(view.status, 200);
+      const body = {
+        deposit_id: deposit.id,
+        preview_hash: view.data.data.funding.preview_hash,
+        signature: "0x" + "b".repeat(130),
+      };
+      const foreign = await human("bob", "funding_confirm", body);
+      assert.equal(foreign.status, 404);
+      const missing = await human("funding", "funding_confirm", {
+        deposit_id: deposit.id,
+        preview_hash: body.preview_hash,
+      });
+      assert.equal(missing.status, 409);
+      const replies = await Promise.all(
+        Array.from({ length: 4 }, () =>
+          human("funding", "funding_confirm", body),
+        ),
+      );
+      assert(replies.every((r) => r.status === 200));
+      assert.equal(submits, 1);
+      venue.depositStatus = async (deposit) => ({
+        deposit_id: deposit.id,
+        trading_balance_usdc: "10",
+        available_to_copy: true,
+        funding_credit_verified: true,
+      });
+      const credited = await ok(user.client, "check_deposit_status", {
+        deposit_id: deposit.id,
+      });
+      assert.equal(credited.data.deposit_status.funding_status, "credited");
+      return {
+        owner_isolation: true,
+        human_signature_required: true,
+        submitted_once: true,
+        verified_credit_state: true,
+      };
+    },
+  );
 } catch (e) {
   results.push({
     name: "Harness startup or critical journey prerequisite",

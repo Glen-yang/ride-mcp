@@ -91,7 +91,7 @@ Standalone `ride login` is separate from Codex native MCP login; Claude/Cursor s
 
 ## Execution and accounting
 
-Write tools create expiring, frozen proposals. Execution requires human approval inside Ride, or an explicit, revocable Ride grant bounded by portfolio, total/action/daily amounts, expiry, assets, markets and leverage. MCP OAuth trade scope does not itself authorize execution. There are no transfer or withdrawal tools.
+Write tools create expiring, frozen proposals. Execution requires human approval inside Ride, or an explicit, revocable Ride grant bounded by portfolio, total/action/daily amounts, expiry, assets, markets and leverage. MCP OAuth trade scope does not itself authorize execution. MCP funding preparation returns an exact-amount human confirmation page; funding and wallet signatures stay on that authenticated page. There are no MCP withdrawal or signing tools.
 
 Recommendations use fresh venue-specific General-pool scores, choose 3–6 feasible sleeves and conserve every micro-USDC. Perps defaults to BTC/ETH, ATR caps are 3–8x subject to source and venue limits, prediction leverage is 1x, sleeve stop loss defaults to 30%, and initial entries outside the 0.2% source-entry boundary wait for a new source cycle. New source assets outside the approved Perps preferences are excluded.
 
@@ -152,3 +152,5 @@ This starts the real MCP gateway, HTTP backend, OAuth PKCE flow and CLI, and run
 MIT. The open repository is created from a clean history and contains no private Ride repository history, credentials, or user account data.
 
 Conversational features include single or 2–8 trader previews, fixed/proportional copying, separate risk preferences, saved recommendation batches, overlap review, deposit addresses/QR and status, daily check-ins and net-profit/account-value charts. Existing portfolios preserve their original limits and stop rules. See [V17 behavior and acceptance](docs/conversational-v17.md). Perps wallet receipt and venue funding remain distinct; RWA requires verified USDC collateral in Standard account scopes.
+
+Recommendation onboarding now returns missing preference questions and persists partial answers before fetching candidates. Perps funding continues from the owned receiving wallet through browser confirmation, optional Embedded Wallet signature, trading-account activation and verified trading balance. Prediction status verifies trading collateral separately from bridge completion. Old App routes and deployments remain independent.

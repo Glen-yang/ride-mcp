@@ -108,7 +108,9 @@ export class CoreBridge {
           Authorization: `Bearer ${this.coreToken}`,
         },
         body: JSON.stringify(input),
-        signal: AbortSignal.timeout(20000),
+        signal: AbortSignal.timeout(
+          operation.startsWith("perps_funding_") ? 90000 : 20000,
+        ),
         redirect: "error",
       },
     );
@@ -1266,11 +1268,31 @@ export class CoreBridge {
           (op, input) => this.core(op, input),
           this.network,
         ).address(input.user_id, input.input, input.portfolio_id);
-      case "deposit_status":
-        return new DepositReads(
+      case "deposit_status": {
+        const status = await new DepositReads(
           (op, input) => this.core(op, input),
           this.network,
-        ).status(input.deposit);
+        ).status(input.deposit, input.user_id);
+        if (input.deposit.provider === "polymarket_bridge") {
+          const balance = await this.prediction.fundingBalance(input.user_id);
+          return {
+            ...status,
+            ...balance,
+            sufficient_for_amount: D(balance.trading_balance_usdc).gte(
+              input.deposit.amount_usdc ?? "5",
+            ),
+            next_action: balance.available_to_copy
+              ? "Trading collateral is verified. Refresh the saved plan before confirming copying."
+              : "Bridge settlement is separate from trading collateral. Wait for verified credit and account readiness.",
+          };
+        }
+        return status;
+      }
+      case "funding_quote":
+      case "funding_submit":
+      case "funding_activate_quote":
+      case "funding_activate_submit":
+        return this.core(`perps_${op}`, input);
       case "candidates":
         return this.candidates();
       case "profile":

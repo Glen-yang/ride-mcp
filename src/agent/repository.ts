@@ -52,6 +52,7 @@ export interface HoldingCheckpoint {
 }
 export interface State {
   preferences: Preferences | null;
+  preference_draft?: Partial<Preferences>;
   recommendation_batches?: {
     preference_hash: string;
     batches: string[][];

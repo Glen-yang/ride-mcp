@@ -6,7 +6,7 @@ const css = await readFile("public/agent.css", "utf8"),
     "export ",
     "",
   );
-for (const name of ["agent", "confirm"]) {
+for (const name of ["agent", "confirm", "fund"]) {
   const path = `public/${name}.html`;
   let html = await readFile(path, "utf8");
   html = html
@@ -19,6 +19,11 @@ for (const name of ["agent", "confirm"]) {
     html = html.replace(
       /\/\*INLINE_HOST\*\/[\s\S]*?(?=<\/script>)/,
       `/*INLINE_HOST*/${host}`,
+    );
+  if (name === "fund")
+    html = html.replace(
+      /\/\*INLINE_FUND\*\/[\s\S]*?(?=<\/script>)/,
+      `/*INLINE_FUND*/${await readFile("public/fund-view.js", "utf8")}`,
     );
   await writeFile(path, html);
 }

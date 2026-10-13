@@ -1,5 +1,5 @@
 import QRCode from "qrcode";
-import { Contract, JsonRpcProvider, FetchRequest } from "ethers";
+import { Contract, JsonRpcProvider, FetchRequest, id as eventId } from "ethers";
 import { AgentError } from "./contracts.js";
 import { cash, D, uid, now } from "./domain.js";
 
@@ -14,6 +14,30 @@ export interface Deposit {
   baseline_wallet_usdc?: string;
   amount_usdc?: string;
   asset_contracts?: string[];
+  funding?: Funding;
+}
+export interface Funding {
+  id: string;
+  amount_usdc: string;
+  created_at: number;
+  expires_at: number;
+  preview_hash: string;
+  status:
+    | "requires_confirmation"
+    | "submitting"
+    | "submitted"
+    | "uncertain"
+    | "failed"
+    | "credited";
+  quote: any;
+  transaction_hash?: string;
+  receipt_status?: string;
+  activation?: {
+    quote: any;
+    preview_hash: string;
+    expires_at: number;
+    status: string;
+  };
 }
 const chains: Record<string, string> = {
   Ethereum: "1",
@@ -130,7 +154,12 @@ export class DepositReads {
           false,
           400,
         );
-      const owned = await this.core("perps_wallet", { user_id: user });
+      let owned;
+      try {
+        owned = await this.core("perps_wallet", { user_id: user });
+      } catch {
+        owned = await this.core("perps_funding_prepare", { user_id: user });
+      }
       if (!validAddress(owned.master))
         throw new AgentError(
           "ACCOUNT_NOT_READY",
@@ -211,19 +240,156 @@ export class DepositReads {
       ...(input.amount_usdc ? { amount_usdc: cash(input.amount_usdc) } : {}),
     };
   }
-  async status(deposit: Deposit) {
+  async status(deposit: Deposit, user?: string) {
     if (deposit.provider === "wallet") {
       const balance = await this.walletBalance(deposit.address),
         received = D(balance).minus(deposit.baseline_wallet_usdc ?? balance);
+      let trading: any = {
+        trading_balance_usdc: null,
+        available_to_copy: false,
+        trading_observation: "unavailable",
+      };
+      if (user) {
+        const owned = await this.core("perps_wallet", { user_id: user });
+        if (
+          !validAddress(owned.master) ||
+          owned.master.toLowerCase() !== deposit.address.toLowerCase()
+        )
+          throw new AgentError(
+            "FUNDING_WALLET_CHANGED",
+            "This receiving account is no longer the active trading account. Review a new request.",
+          );
+        const response = await this.request(
+          "https://api.hyperliquid.xyz/info",
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              type: "clearinghouseState",
+              user: owned.master,
+            }),
+            signal: AbortSignal.timeout(12000),
+            redirect: "error",
+          },
+        );
+        if (!response.ok)
+          throw new AgentError(
+            "TRADING_BALANCE_UNAVAILABLE",
+            "Trading balance could not be verified.",
+            true,
+            503,
+          );
+        const state = (await response.json()) as any;
+        if (
+          typeof state.withdrawable !== "string" ||
+          !state.marginSummary ||
+          !Array.isArray(state.assetPositions) ||
+          !D(state.withdrawable).isFinite() ||
+          D(state.withdrawable).lt(0)
+        )
+          throw new AgentError(
+            "TRADING_BALANCE_UNAVAILABLE",
+            "Trading balance evidence is incomplete.",
+            true,
+            503,
+          );
+        const active = owned.status === 4 || owned.status === "active";
+        trading = {
+          trading_balance_usdc: cash(state.withdrawable),
+          trading_observed_at: now(),
+          available_to_copy: active && D(state.withdrawable).gt(0),
+          sufficient_for_amount: D(state.withdrawable).gte(
+            deposit.funding?.amount_usdc ?? deposit.amount_usdc ?? "5",
+          ),
+          activation_required: !active,
+          trading_observation: "verified",
+        };
+      }
+      let fundingReceipt = "unavailable",
+        verifiedCredit = false;
+      const f = deposit.funding;
+      if (f?.transaction_hash) {
+        const response = await this.request(
+          process.env.RIDE_AGENT_ARBITRUM_RPC_URL ??
+            "https://arb1.arbitrum.io/rpc",
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              jsonrpc: "2.0",
+              id: 1,
+              method: "eth_getTransactionReceipt",
+              params: [f.transaction_hash],
+            }),
+            signal: AbortSignal.timeout(12000),
+            redirect: "error",
+          },
+        );
+        if (!response.ok)
+          throw new AgentError(
+            "FUNDING_RECEIPT_UNAVAILABLE",
+            "Funding receipt is not available; do not resubmit.",
+            true,
+            503,
+          );
+        const receipt = ((await response.json()) as any).result;
+        if (!receipt) fundingReceipt = "pending";
+        else if (receipt.status === "0x0") fundingReceipt = "reverted";
+        else if (
+          receipt.status === "0x1" &&
+          receipt.transactionHash?.toLowerCase() ===
+            f.transaction_hash.toLowerCase() &&
+          receipt.to?.toLowerCase() ===
+            "0x2df1c51e09aecf9cacb7bc98cb1742757f163df7"
+        ) {
+          const amountRaw = BigInt(D(f.amount_usdc).times(1e6).toFixed(0));
+          const transferred = (receipt.logs ?? []).some(
+            (log: any) =>
+              log.address?.toLowerCase() ===
+                "0xaf88d065e77c8cc2239327c5edb3a432268e5831" &&
+              log.topics?.[0] ===
+                eventId("Transfer(address,address,uint256)") &&
+              log.topics?.[1]?.slice(-40).toLowerCase() ===
+                deposit.address.slice(2).toLowerCase() &&
+              log.topics?.[2]?.slice(-40).toLowerCase() ===
+                "2df1c51e09aecf9cacb7bc98cb1742757f163df7" &&
+              /^0x[a-fA-F0-9]{64}$/.test(log.data) &&
+              BigInt(log.data) === amountRaw,
+          );
+          if (transferred) {
+            fundingReceipt = "confirmed";
+            verifiedCredit =
+              trading.trading_observation === "verified" &&
+              D(trading.trading_balance_usdc).gte(
+                D(f.quote.baseline_trading_available_usdc ?? "0").plus(
+                  f.amount_usdc,
+                ),
+              );
+          }
+        }
+      }
       return {
         deposit_id: deposit.id,
-        status: received.gt(0)
-          ? "wallet_balance_increased"
-          : "awaiting_deposit",
+        status: trading.available_to_copy
+          ? "trading_ready"
+          : D(trading.trading_balance_usdc ?? "0").gt(0)
+            ? "activation_required"
+            : received.gt(0)
+              ? "wallet_balance_increased"
+              : "awaiting_deposit",
+        wallet_balance_usdc: balance,
         received_usdc: received.gt(0) ? cash(received) : null,
-        available_to_copy: false,
-        next_action:
-          "Open Ride to complete the Arbitrum wallet-to-Hyperliquid deposit, then refresh your saved plan. Wallet balance changes alone do not prove a specific transfer or trading credit.",
+        ...trading,
+        funding_status: deposit.funding?.status ?? null,
+        funding_receipt: fundingReceipt,
+        funding_credit_verified: verifiedCredit,
+        transaction_hash: deposit.funding?.transaction_hash ?? null,
+        next_action: trading.available_to_copy
+          ? "Trading balance is verified. Refresh the saved plan before confirming copying."
+          : trading.activation_required &&
+              D(trading.trading_balance_usdc ?? "0").gt(0)
+            ? "Open the Ride funding confirmation page to activate this funded trading account."
+            : "Use prepare_deposit with the exact amount to open Ride's funding confirmation page. Wallet receipt alone is not trading credit. Do not repeat an unresolved submission.",
       };
     }
     const response = await this.bridge(`status/${deposit.address}`);
@@ -264,6 +430,7 @@ export async function depositView(deposit: Deposit) {
     ...deposit,
     baseline_wallet_usdc: undefined,
     asset_contracts: undefined,
+    funding: undefined,
     qr_data_url: await QRCode.toDataURL(deposit.address, {
       errorCorrectionLevel: "M",
       margin: 2,
@@ -276,7 +443,7 @@ export async function depositView(deposit: Deposit) {
         : "Prediction bridge",
     instructions:
       deposit.provider === "wallet"
-        ? "Send only native USDC on Arbitrum to this owned funding wallet. Complete the venue deposit in Ride before copying."
+        ? "Send only native USDC on Arbitrum to this owned funding wallet. Then open the Ride funding confirmation page to move the chosen amount to the trading account, activate it if needed, and verify trading balance."
         : "Use only the selected supported asset and network. Check provider status before refreshing available collateral.",
   };
 }
