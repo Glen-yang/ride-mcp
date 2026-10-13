@@ -6,6 +6,7 @@ import { MemoryRepository, Cursor } from "./repository.js";
 import { FakeAdapter } from "./fixtures.js";
 import { uid, now } from "./domain.js";
 import { publicResult } from "./contracts.js";
+import { recommend } from "./domain.js";
 
 function fixture() {
   const repository = new MemoryRepository(),
@@ -51,6 +52,31 @@ function fixture() {
   };
   return { repository, adapter, api, funding, deposit, calls: () => calls };
 }
+it("recovers already answered preferences from an older saved preview without asking them again", async () => {
+  const f = fixture();
+  await f.repository.transact("alice", async (s) => {
+    s.plans.push(
+      recommend(
+        {
+          budget_usdc: "500",
+          loss_trigger_pct: 25,
+          market: "perps",
+          assets: ["BTC", "ETH"],
+          allow_altcoins: false,
+        },
+        f.adapter.pool,
+      ),
+    );
+    assert.equal(s.preferences, null);
+  });
+  const out = await f.api.tool("alice", "get_preferences", {});
+  assert.equal(out.status, "ok");
+  assert.deepEqual((out.data.preference_collection as any).missing_fields, []);
+  assert.equal(
+    (out.data.preference_collection as any).answers.budget_usdc,
+    "500",
+  );
+});
 it("returns only missing preference questions without reading candidate data, preserves partial answers and account isolation", async () => {
   const f = fixture();
   let reads = 0;

@@ -23,7 +23,10 @@ export function preferenceCollection(
   answers: Partial<Preferences> = {},
 ) {
   const saved = {
-    ...(s.preferences ?? {}),
+    ...(s.preferences ??
+      s.plans.at(-1)?.preferences ??
+      s.portfolios.find((p) => p.state !== "closed")?.preferences ??
+      {}),
     ...(s.preference_draft ?? {}),
     ...answers,
   };
