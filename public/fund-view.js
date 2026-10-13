@@ -193,8 +193,11 @@ function display(value) {
       );
       await check();
     });
-  if (funding.transaction_hash)
-    c.append(node("p", `Transaction: ${funding.transaction_hash}`));
+  if (funding.transaction_hash) {
+    const transaction = node("p", `Transaction: ${funding.transaction_hash}`);
+    transaction.className = "deposit-address";
+    c.append(transaction);
+  }
   content.append(c);
 }
 async function check() {
