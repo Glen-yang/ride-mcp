@@ -1,6 +1,6 @@
 # Ride MCP · CLI · Skill
 
-Ride Agent V3 selects a diversified trader basket and manages owned Perps and prediction-market copies. It exposes twenty Agent MCP tools plus an authenticated Ride App copy read and a live workflow guide, equivalent JSON CLI commands, compact MCP App cards, and a portable agent Skill.
+Ride Agent V3 selects a diversified trader basket and manages owned Perps and prediction-market copies. It exposes twenty-two Agent MCP tools plus an authenticated Ride App copy read and a live workflow guide, equivalent JSON CLI commands, compact MCP App cards, and a portable agent Skill.
 
 **Release status:** the hosted V3 endpoint is `https://mcp.onride.me/mcp`. Account readiness and Ride approval govern trading. The CLI and Skill are distributed as `@glenyang/ride-cli`; client installation targets the same production MCP endpoint.
 
@@ -17,16 +17,16 @@ The installer detects Codex, Claude Code and Cursor. With one detected client it
 For unattended configuration or an explicit client, the existing options remain available:
 
 ```sh
-npx -y @glenyang/ride-cli@0.4.1 setup --client codex --trade
-npx -y @glenyang/ride-cli@0.4.1 setup --client claude-code --trade
-npx -y @glenyang/ride-cli@0.4.1 setup --client cursor --trade
+npx -y @glenyang/ride-cli@0.4.2 setup --client codex --trade
+npx -y @glenyang/ride-cli@0.4.2 setup --client claude-code --trade
+npx -y @glenyang/ride-cli@0.4.2 setup --client cursor --trade
 ```
 
 Codex uses native HTTP MCP and its own OAuth credential storage. If the Codex CLI is absent, setup runs the official `@openai/codex@0.162.0` CLI through npx automatically. Claude Code and Cursor use the automatically updated Ride CLI's stdio MCP and private OAuth session. `setup` without `--trade` requests read access. Add `--skip-login` for configuration only; `--server https://YOUR-RIDE-HOST/mcp` selects another deployment.
 
 Setup preserves unrelated settings, upgrades unmodified managed installations and refuses to overwrite a foreign `ride` entry or customized Skill. If login is cancelled or fails, rerun the same command to retry; the installed configuration is retained.
 
-Registry installation is the default. The pinned GitHub source remains available with `npx -y github:Glen-yang/ride-mcp#v0.4.1 setup --client CLIENT --trade --distribution github`. Other clients supporting remote Streamable HTTP MCP with OAuth can connect to `https://mcp.onride.me/mcp`; their registration and consent interface is managed by that client. The installer currently configures Codex, Claude Code and Cursor.
+Registry installation is the default. The pinned GitHub source remains available with `npx -y github:Glen-yang/ride-mcp#v0.4.2 setup --client CLIENT --trade --distribution github`. Other clients supporting remote Streamable HTTP MCP with OAuth can connect to `https://mcp.onride.me/mcp`; their registration and consent interface is managed by that client. The installer currently configures Codex, Claude Code and Cursor.
 
 For the Skill alone:
 
@@ -34,7 +34,7 @@ For the Skill alone:
 npx skills add Glen-yang/ride-mcp --skill ride
 ```
 
-The Skill-only command does not register an MCP server. For standalone CLI commands, prefix the commands below with `npx -y @glenyang/ride-cli@0.4.1`, or install the pinned package with `npm install -g @glenyang/ride-cli@0.4.1` to obtain `ride`.
+The Skill-only command does not register an MCP server. For standalone CLI commands, prefix the commands below with `npx -y @glenyang/ride-cli@0.4.2`, or install the pinned package with `npm install -g @glenyang/ride-cli@0.4.2` to obtain `ride`.
 
 ## Automatic updates and existing users
 
@@ -73,7 +73,12 @@ Standalone `ride login` is separate from Codex native MCP login; Claude/Cursor s
 | MCP tool                       | CLI equivalent                                    |
 | ------------------------------ | ------------------------------------------------- |
 | `get_ride_guide`               | `ride guide [--server URL]`                       |
+| `get_preferences`              | `ride preferences`                                |
 | `set_preferences`              | `ride preferences --json ...`                     |
+| `get_deposit_options`          | `ride deposit options`                            |
+| `get_deposit_address`          | `ride deposit address --json ...`                 |
+| `prepare_deposit`              | `ride deposit prepare DEPOSIT_ID --json ...`      |
+| `check_deposit_status`         | `ride deposit status DEPOSIT_ID`                  |
 | `recommend_traders`            | `ride recommend`                                  |
 | `get_trader_profile`           | `ride trader TRADER_ID`                           |
 | `start_copy`                   | `ride copy start PLAN_ID`                         |
@@ -91,7 +96,7 @@ Standalone `ride login` is separate from Codex native MCP login; Claude/Cursor s
 
 ## Execution and accounting
 
-Write tools create expiring, frozen proposals. Execution requires human approval inside Ride, or an explicit, revocable Ride grant bounded by portfolio, total/action/daily amounts, expiry, assets, markets and leverage. MCP OAuth trade scope does not itself authorize execution. There are no transfer or withdrawal tools.
+Write tools create expiring, frozen proposals. Execution requires human approval inside Ride, or an explicit, revocable Ride grant bounded by portfolio, total/action/daily amounts, expiry, assets, markets and leverage. MCP OAuth trade scope does not itself authorize execution. MCP funding preparation returns an exact-amount human confirmation page; funding and wallet signatures stay on that authenticated page. There are no MCP withdrawal or signing tools.
 
 Recommendations use fresh venue-specific General-pool scores, choose 3–6 feasible sleeves and conserve every micro-USDC. Perps defaults to BTC/ETH, ATR caps are 3–8x subject to source and venue limits, prediction leverage is 1x, sleeve stop loss defaults to 30%, and initial entries outside the 0.2% source-entry boundary wait for a new source cycle. New source assets outside the approved Perps preferences are excluded.
 
@@ -152,3 +157,5 @@ This starts the real MCP gateway, HTTP backend, OAuth PKCE flow and CLI, and run
 MIT. The open repository is created from a clean history and contains no private Ride repository history, credentials, or user account data.
 
 Conversational features include single or 2–8 trader previews, fixed/proportional copying, separate risk preferences, saved recommendation batches, overlap review, deposit addresses/QR and status, daily check-ins and net-profit/account-value charts. Existing portfolios preserve their original limits and stop rules. See [V17 behavior and acceptance](docs/conversational-v17.md). Perps wallet receipt and venue funding remain distinct; RWA requires verified USDC collateral in Standard account scopes.
+
+Recommendation onboarding now returns missing preference questions and persists partial answers before fetching candidates. Perps funding continues from the owned receiving wallet through browser confirmation, optional Embedded Wallet signature, trading-account activation and verified trading balance. Prediction status verifies trading collateral separately from bridge completion. Old App routes and deployments remain independent.

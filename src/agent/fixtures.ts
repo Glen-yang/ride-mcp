@@ -57,6 +57,7 @@ export class FakeAdapter implements VenueAdapter {
   depositOptions?: NonNullable<VenueAdapter["depositOptions"]>;
   depositAddress?: NonNullable<VenueAdapter["depositAddress"]>;
   depositStatus?: NonNullable<VenueAdapter["depositStatus"]>;
+  fundingOperation?: NonNullable<VenueAdapter["fundingOperation"]>;
   snap = snapshot();
   submitCount = 0;
   notifyCount = 0;

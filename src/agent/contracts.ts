@@ -41,7 +41,21 @@ export const preferences = z
   })
   .strict();
 const portfolioInput = z.object({ portfolio_id: id.optional() }).strict();
+// Partial answers must not silently acquire defaults before the user chooses.
+export const preferenceAnswers = z
+  .object({
+    ...preferences.shape,
+    market: market,
+    assets: preferences.shape.assets.unwrap(),
+    allow_altcoins: z.boolean(),
+  })
+  .partial()
+  .strict();
 export const inputs = {
+  get_preferences: z.object({}).strict(),
+  prepare_deposit: z
+    .object({ deposit_id: id, amount_usdc: positiveMoney })
+    .strict(),
   get_deposit_options: z.object({}).strict(),
   get_deposit_address: z
     .object({
@@ -58,10 +72,10 @@ export const inputs = {
   update_portfolio: z
     .object({ portfolio_id: id, loss_trigger_pct: z.number().min(1).max(100) })
     .strict(),
-  set_preferences: preferences,
+  set_preferences: preferenceAnswers,
   recommend_traders: z
     .object({
-      preferences: preferences.optional(),
+      preferences: preferenceAnswers.optional(),
       batch_action: z.enum(["first", "next", "saved"]).optional(),
       batch_index: z.number().int().min(0).max(1).optional(),
       trader_ids: z.array(id).min(1).max(8).optional(),
@@ -180,6 +194,7 @@ export const mutationTools = new Set<ToolName>([
 ]);
 // State edits are distinct from proposals that can move funds.
 export const stateTools = new Set<ToolName>([
+  "prepare_deposit",
   "set_preferences",
   "recalculate_plan",
   "recommend_traders",
@@ -193,6 +208,7 @@ export const output = z
     version: z.literal("3"),
     status: z.enum([
       "ok",
+      "requires_preferences",
       "empty",
       "requires_confirmation",
       "queued",

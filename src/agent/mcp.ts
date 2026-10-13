@@ -165,6 +165,10 @@ export async function invokeAgent(
 }
 function description(name: ToolName): string {
   const descriptions: Record<ToolName, string> = {
+    get_preferences:
+      "Read saved and partial preferences. Ask the returned missing questions before recommendations; preserve earlier answers. Never invent budget or acceptable loss.",
+    prepare_deposit:
+      "Prepare an exact-amount deposit activation for an owned funding request. Returns a human Ride confirmation URL; no funds move until the user confirms and signs there.",
     get_deposit_options:
       "Read currently supported funding routes. No funds are transferred.",
     get_deposit_address:
@@ -176,7 +180,7 @@ function description(name: ToolName): string {
     update_portfolio:
       "Propose changing the owned portfolio loss threshold; requires Ride confirmation and cannot unlatch a triggered stop.",
     set_preferences:
-      "Save budget, loss trigger and market preferences. Existing portfolios are unchanged.",
+      "Save only the user's supplied preference answers, including partial answers. Returns the remaining questions; never fill a missing budget or loss tolerance yourself. Existing portfolios are unchanged.",
     recalculate_plan:
       "Refresh a saved preview or validate edited trader allocations against fresh eligibility, budget and leverage limits. Returns a new frozen plan; no execution.",
     get_performance:
@@ -188,7 +192,7 @@ function description(name: ToolName): string {
     set_notification_preferences:
       "Save explicitly requested daily Ride App digest opt-in, local time and IANA timezone. Critical risk alerts remain enabled; this does not authorize trading.",
     recommend_traders:
-      "Recommend a frozen diversified plan of 3–6 fresh eligible traders using saved or supplied preferences.",
+      "First read get_preferences and ask its missing questions. Recommend using saved/user-supplied answers, or return questions without candidates if incomplete. Single or 2–8 explicit baskets, legacy 3–6; no funding is required for preview.",
     get_trader_profile:
       "Read verified source statistics and actual Copy Score components using a public trader ID.",
     start_copy:

@@ -18,6 +18,7 @@ import {
   type ToolName,
   id,
   positiveMoney,
+  output,
 } from "./contracts.js";
 import {
   createRideHttpApp,
@@ -148,6 +149,59 @@ export function backendApp(
         );
       let value;
       switch (req.params.operation) {
+        case "funding_prepare": {
+          const a = z
+            .object({ deposit_id: id, amount_usdc: positiveMoney })
+            .strict()
+            .parse(req.body);
+          value = await service.funding.prepare(
+            user,
+            a.deposit_id,
+            String(a.amount_usdc),
+          );
+          break;
+        }
+        case "funding":
+        case "funding_activation_quote":
+        case "funding_status": {
+          const a = z.object({ deposit_id: id }).strict().parse(req.body);
+          value =
+            req.params.operation === "funding"
+              ? await service.funding.read(user, a.deposit_id)
+              : req.params.operation === "funding_activation_quote"
+                ? await service.funding.activationQuote(user, a.deposit_id)
+                : await service.tool(user, "check_deposit_status", a);
+          break;
+        }
+        case "funding_confirm":
+        case "funding_activate": {
+          const a = z
+            .object({
+              deposit_id: id,
+              preview_hash: z.string().regex(/^[a-f0-9]{64}$/),
+              signature: z
+                .string()
+                .regex(/^0x[a-fA-F0-9]{130}$/)
+                .optional(),
+            })
+            .strict()
+            .parse(req.body);
+          value =
+            req.params.operation === "funding_confirm"
+              ? await service.funding.confirm(
+                  user,
+                  a.deposit_id,
+                  a.preview_hash,
+                  a.signature,
+                )
+              : await service.funding.activate(
+                  user,
+                  a.deposit_id,
+                  a.preview_hash,
+                  a.signature,
+                );
+          break;
+        }
         case "proposal": {
           const a = z.object({ proposal_id: id }).strict().parse(req.body);
           value = await service.proposal(user, a.proposal_id);
@@ -219,7 +273,13 @@ export function backendApp(
             404,
           );
       }
-      res.set("Cache-Control", "no-store").json(publicResult(value));
+      res
+        .set("Cache-Control", "no-store")
+        .json(
+          req.params.operation.startsWith("funding")
+            ? output.parse(value)
+            : publicResult(value),
+        );
     } catch (e) {
       res.status(e instanceof AgentError ? e.httpStatus : 400).json(failure(e));
     }

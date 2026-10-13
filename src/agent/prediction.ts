@@ -286,6 +286,22 @@ export class PredictionVenue {
     }
     return out;
   }
+  async fundingBalance(user: string) {
+    const identity = await this.core("prediction_wallet", {
+      user_id: user,
+      portfolio_id: null,
+    });
+    const head = await this.provider().getBlockNumber();
+    const block = Math.max(0, head - 2);
+    const balance = await this.cashBalance(identity.wallet, identity, block);
+    return {
+      trading_balance_usdc: cash(balance),
+      trading_observed_at: now(),
+      chain_block: block,
+      available_to_copy: identity.eligible === true && D(balance).gt(0),
+      trading_observation: "verified",
+    };
+  }
   async account(
     user: string,
     p: Portfolio,

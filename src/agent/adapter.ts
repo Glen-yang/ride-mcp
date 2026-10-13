@@ -21,7 +21,15 @@ export interface VenueAdapter {
     input: any,
     portfolioId?: string,
   ): Promise<import("./deposits.js").Deposit>;
-  depositStatus?(deposit: import("./deposits.js").Deposit): Promise<any>;
+  depositStatus?(
+    deposit: import("./deposits.js").Deposit,
+    user?: string,
+  ): Promise<any>;
+  fundingOperation?(
+    operation: "quote" | "submit" | "activate_quote" | "activate_submit",
+    user: string,
+    input: any,
+  ): Promise<any>;
   sourceFills?(
     trader: Candidate,
     start: number,
@@ -114,7 +122,9 @@ export class BridgeAdapter implements VenueAdapter {
             Authorization: `Bearer ${this.token}`,
           },
           body: JSON.stringify(input),
-          signal: AbortSignal.timeout(20000),
+          signal: AbortSignal.timeout(
+            operation.startsWith("funding_") ? 90000 : 20000,
+          ),
           redirect: "error",
         },
       );
@@ -151,8 +161,15 @@ export class BridgeAdapter implements VenueAdapter {
       portfolio_id: portfolioId,
     });
   }
-  depositStatus(deposit: import("./deposits.js").Deposit) {
-    return this.call<any>("deposit_status", { deposit });
+  depositStatus(deposit: import("./deposits.js").Deposit, user?: string) {
+    return this.call<any>("deposit_status", { deposit, user_id: user });
+  }
+  fundingOperation(
+    operation: "quote" | "submit" | "activate_quote" | "activate_submit",
+    user: string,
+    input: any,
+  ) {
+    return this.call<any>(`funding_${operation}`, { user_id: user, ...input });
   }
   candidates() {
     return this.call<Candidate[]>("candidates", {});

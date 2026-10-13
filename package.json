@@ -1,6 +1,6 @@
 {
   "name": "@glenyang/ride-cli",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "private": false,
   "type": "module",
   "scripts": {
@@ -62,6 +62,7 @@
     "dist",
     "public/agent.html",
     "public/confirm.html",
+    "public/fund.html",
     "skills",
     "README.md",
     "LICENSE",

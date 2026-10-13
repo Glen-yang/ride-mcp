@@ -9,7 +9,7 @@ import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import type { Express } from "express";
 import { z } from "zod";
-import { AgentError, failure, publicResult } from "./contracts.js";
+import { AgentError, failure, publicResult, output } from "./contracts.js";
 import type { PrivyAuthorizationInput, RideAuthPageConfig } from "../oauth.js";
 
 export function mountHumanConfirmation(
@@ -83,6 +83,31 @@ export function mountHumanConfirmation(
         ),
       );
   });
+  app.get("/agent/fund/:depositId", async (req, res) => {
+    if (!/^deposit_[a-f0-9]{32}$/.test(req.params.depositId)) {
+      res.status(404).end();
+      return;
+    }
+    const template = await readFile(
+      fileURLToPath(new URL("../../public/fund.html", import.meta.url)),
+      "utf8",
+    );
+    const config = {
+      deposit_id: req.params.depositId,
+      privy_app_id: options.auth.privyAppId,
+      privy_client_id: options.auth.privyClientId,
+      privy_sdk: options.auth.jsSdkUrl,
+    };
+    res
+      .set("Cache-Control", "no-store")
+      .type("html")
+      .send(
+        template.replace(
+          "/*CONFIG*/{}",
+          JSON.stringify(config).replaceAll("<", "\\u003c"),
+        ),
+      );
+  });
   app.post("/agent/human/login", async (req, res) => {
     try {
       if (req.get("origin") !== origin)
@@ -127,6 +152,12 @@ export function mountHumanConfirmation(
     }
   });
   const allowed = new Set([
+    "funding",
+    "funding_prepare",
+    "funding_confirm",
+    "funding_activation_quote",
+    "funding_activate",
+    "funding_status",
     "proposal",
     "confirm",
     "reject",
@@ -188,11 +219,18 @@ export function mountHumanConfirmation(
             Authorization: `Bearer ${token}`,
           },
           body: JSON.stringify(req.body),
-          signal: AbortSignal.timeout(25000),
+          signal: AbortSignal.timeout(
+            req.params.operation.startsWith("funding") ? 120000 : 25000,
+          ),
           redirect: "error",
         },
       );
-      const value = publicResult(await response.json());
+      const body = await response.json();
+      // Verified signing challenges belong only to this authenticated human
+      // page; MCP routes continue to reject raw trading identities.
+      const value = req.params.operation.startsWith("funding")
+        ? output.parse(body)
+        : publicResult(body);
       res.status(response.status).set("Cache-Control", "no-store").json(value);
     } catch (e) {
       res.status(e instanceof AgentError ? e.httpStatus : 503).json(failure(e));

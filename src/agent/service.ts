@@ -43,8 +43,17 @@ import {
 } from "./conversational.js";
 import { depositView } from "./deposits.js";
 import { localDay } from "./analytics.js";
+import { preferenceCollection, completePreferences } from "./preferences.js";
+import { FundingService } from "./funding.js";
 
 export class AgentService {
+  get funding() {
+    return new FundingService(
+      this.repository,
+      this.adapter,
+      this.confirmationBase,
+    );
+  }
   constructor(
     readonly repository: Repository,
     readonly adapter: VenueAdapter,
@@ -53,6 +62,20 @@ export class AgentService {
   ) {}
   async tool(user: string, name: ToolName, input: unknown): Promise<Result> {
     const args = inputs[name].parse(input) as Record<string, unknown>;
+    if (name === "prepare_deposit")
+      return this.funding.prepare(
+        user,
+        args.deposit_id as string,
+        String(args.amount_usdc),
+      );
+    if (name === "get_preferences")
+      return this.repository.transact(user, async (s) => {
+        const collection = preferenceCollection(s);
+        return result(
+          { preference_collection: collection },
+          collection.ready ? "ok" : "requires_preferences",
+        );
+      });
     if (name === "get_deposit_options") {
       if (!this.adapter.depositOptions)
         throw new AgentError(
@@ -82,18 +105,20 @@ export class AgentService {
       );
     }
     if (name === "recommend_traders") {
-      const pool = await this.adapter.candidates();
       return this.repository.transact(user, async (s) => {
-        const pref = args.preferences
-          ? preferences.parse(args.preferences)
-          : s.preferences;
-        if (!pref)
-          throw new AgentError(
-            "PREFERENCES_REQUIRED",
-            "Set budget, loss trigger and market preference first.",
-            false,
-            400,
+        const answers = (args.preferences ?? {}) as any;
+        const collection = preferenceCollection(s, answers);
+        if (!collection.ready) {
+          s.preference_draft = collection.answers;
+          return result(
+            { preference_collection: collection },
+            "requires_preferences",
           );
+        }
+        const pref = completePreferences(s, answers)!;
+        s.preferences = pref;
+        s.preference_draft = undefined;
+        const pool = await this.adapter.candidates();
         let displayedPool = eligibleCandidates(pref, pool);
         if (args.batch_action) {
           const hash = fingerprint(pref),
@@ -270,8 +295,33 @@ export class AgentService {
             true,
             503,
           );
+        const status = await this.adapter.depositStatus(deposit, user);
+        if (deposit.funding) {
+          if (status.funding_credit_verified)
+            deposit.funding.status = "credited";
+          else if (status.funding_receipt === "reverted")
+            deposit.funding.status = "failed";
+          status.funding_status = deposit.funding.status;
+        }
+        const savedPlan = s.plans.at(-1);
+        if (savedPlan && status.trading_balance_usdc != null) {
+          const required = savedPlan.allocations
+            .filter((a) => a.trader.market === deposit.market)
+            .reduce((total, a) => total.plus(a.amount_usdc), D(0));
+          status.trading_account_ready = status.available_to_copy === true;
+          status.required_for_saved_plan_usdc = cash(required);
+          status.saved_plan_funded =
+            status.trading_account_ready &&
+            D(status.trading_balance_usdc).gte(required);
+          status.available_to_copy = status.saved_plan_funded;
+          status.saved_plan_shortfall_usdc = cash(
+            D.max(0, required.minus(status.trading_balance_usdc)),
+          );
+          if (status.trading_account_ready && !status.saved_plan_funded)
+            status.next_action = `Trading balance is verified, but the saved plan still needs ${status.saved_plan_shortfall_usdc} USDC. Fund the difference or explicitly choose a smaller plan, then refresh it.`;
+        }
         return result({
-          deposit_status: await this.adapter.depositStatus(deposit),
+          deposit_status: status,
           saved_plan_id: s.plans.at(-1)?.id ?? null,
         });
       }
@@ -305,9 +355,22 @@ export class AgentService {
         });
       }
       if (name === "set_preferences") {
-        s.preferences = preferences.parse(args);
+        const collection = preferenceCollection(s, args as any);
+        if (!collection.ready) {
+          s.preference_draft = collection.answers;
+          return result(
+            {
+              preference_collection: collection,
+              existing_portfolios_unchanged: true,
+            },
+            "requires_preferences",
+          );
+        }
+        s.preferences = completePreferences(s, args as any)!;
+        s.preference_draft = undefined;
         return result({
           preferences: s.preferences,
+          preference_collection: preferenceCollection(s),
           existing_portfolios_unchanged: true,
         });
       }
@@ -675,7 +738,13 @@ export class AgentService {
                 },
                 "empty",
               )
-            : result({ portfolio: null }, "empty");
+            : result(
+                {
+                  portfolio: null,
+                  preference_collection: preferenceCollection(s),
+                },
+                "empty",
+              );
         }
         try {
           p.snapshot = await this.adapter.account(user, p);
