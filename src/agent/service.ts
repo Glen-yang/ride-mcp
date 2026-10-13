@@ -303,6 +303,23 @@ export class AgentService {
             deposit.funding.status = "failed";
           status.funding_status = deposit.funding.status;
         }
+        const savedPlan = s.plans.at(-1);
+        if (savedPlan && status.trading_balance_usdc != null) {
+          const required = savedPlan.allocations
+            .filter((a) => a.trader.market === deposit.market)
+            .reduce((total, a) => total.plus(a.amount_usdc), D(0));
+          status.trading_account_ready = status.available_to_copy === true;
+          status.required_for_saved_plan_usdc = cash(required);
+          status.saved_plan_funded =
+            status.trading_account_ready &&
+            D(status.trading_balance_usdc).gte(required);
+          status.available_to_copy = status.saved_plan_funded;
+          status.saved_plan_shortfall_usdc = cash(
+            D.max(0, required.minus(status.trading_balance_usdc)),
+          );
+          if (status.trading_account_ready && !status.saved_plan_funded)
+            status.next_action = `Trading balance is verified, but the saved plan still needs ${status.saved_plan_shortfall_usdc} USDC. Fund the difference or explicitly choose a smaller plan, then refresh it.`;
+        }
         return result({
           deposit_status: status,
           saved_plan_id: s.plans.at(-1)?.id ?? null,

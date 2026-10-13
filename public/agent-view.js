@@ -128,6 +128,11 @@ export function render(root, value, openLink = () => {}, callTool = () => {}) {
     const c = card("Deposit status");
     c.append(
       row("Status", d.deposit_status.status),
+      row("Trading available", usdc(d.deposit_status.trading_balance_usdc)),
+      row(
+        "Saved plan shortfall",
+        usdc(d.deposit_status.saved_plan_shortfall_usdc),
+      ),
       row("Available to copy", d.deposit_status.available_to_copy),
       el("p", d.deposit_status.next_action, "muted"),
     );

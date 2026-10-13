@@ -77,6 +77,36 @@ it("recovers already answered preferences from an older saved preview without as
     "500",
   );
 });
+it("keeps trading credit separate from sufficient funds for the saved plan", async () => {
+  const f = fixture();
+  await f.repository.transact("alice", async (s) => {
+    s.deposits = [f.deposit];
+    s.plans.push(
+      recommend(
+        {
+          budget_usdc: "500",
+          loss_trigger_pct: 25,
+          market: "perps",
+          assets: ["BTC", "ETH"],
+          allow_altcoins: false,
+        },
+        f.adapter.pool,
+      ),
+    );
+  });
+  f.adapter.depositStatus = async () => ({
+    trading_balance_usdc: "10",
+    available_to_copy: true,
+  });
+  const status = (
+    await f.api.tool("alice", "check_deposit_status", {
+      deposit_id: f.deposit.id,
+    })
+  ).data.deposit_status as any;
+  assert.equal(status.trading_account_ready, true);
+  assert.equal(status.available_to_copy, false);
+  assert.equal(status.saved_plan_shortfall_usdc, "490.000000");
+});
 it("returns only missing preference questions without reading candidate data, preserves partial answers and account isolation", async () => {
   const f = fixture();
   let reads = 0;

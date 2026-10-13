@@ -206,7 +206,7 @@ async function check() {
   if (d.funding_status && d.funding_status !== funding.status)
     display(await call("funding"));
   status.className = d.available_to_copy ? "" : "warning";
-  status.textContent = `${d.available_to_copy ? "Trading balance verified" : "Trading credit or activation pending"} · Wallet: ${d.wallet_balance_usdc ?? "unavailable"} USDC · Trading available: ${d.trading_balance_usdc ?? "unavailable"} USDC · ${d.next_action}`;
+  status.textContent = `${d.available_to_copy || d.trading_account_ready ? "Trading balance verified" : "Trading credit or activation pending"} · Wallet: ${d.wallet_balance_usdc ?? "unavailable"} USDC · Trading available: ${d.trading_balance_usdc ?? "unavailable"} USDC · ${d.next_action}`;
   content
     .querySelectorAll('[data-action="review-activation"]')
     .forEach((b) => b.remove());
