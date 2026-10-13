@@ -39,7 +39,9 @@ Default output is JSON. Add `--pretty` for human-readable cards/tables. The CLI 
 
 `ride recommend --json '{"preferences":{"budget_usdc":"500","loss_trigger_pct":40,"market":"perps","assets":["BTC","ETH"],"portfolio_kind":"basket","basket_size":4,"risk_tolerance":"medium","asset_category":"crypto","copy_mode":"ride_recommends","loss_policy":"pause_then_exit","emergency_exit_pct":70},"batch_action":"first"}'` starts the HTML-style preview. Keep the returned preferences with `plan recalculate`. A flagged start uses `ride copy start PLAN_ID --json '{"compatibility_ack":"RETURNED_FINGERPRINT"}'` after the user explicitly acknowledges its warning.
 
-| get_preferences | `ride preferences` |
+| MCP tool        | CLI                                                             |
+| --------------- | --------------------------------------------------------------- |
+| get_preferences | `ride preferences`                                              |
 | prepare_deposit | `ride deposit prepare DEPOSIT_ID --json '{"amount_usdc":"10"}'` |
 
 Partial preference answers are saved; remaining questions are returned without a recommendation. Funding preparation returns a reviewed human confirmation page. Wallet credit, transaction confirmation, account activation and verified trading balance are separate states. Do not resubmit uncertain funding.
