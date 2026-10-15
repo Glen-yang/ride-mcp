@@ -17,6 +17,7 @@ import {
   recommend,
   assetAllowed,
   recommendedLeverage,
+  minimumAllocation,
   eligibleCandidates,
   recommendationDiagnostics,
   aggregate,
@@ -250,7 +251,7 @@ export class AgentService {
               )!;
               if (
                 total.gt(pref.budget_usdc) ||
-                D(old.amount_usdc).lt(D.max(50, a.trader.min_notional_usdc)) ||
+                D(old.amount_usdc).lt(minimumAllocation(pref, a.trader)) ||
                 old.leverage_cap > a.leverage_cap
               )
                 throw new AgentError(
@@ -297,18 +298,16 @@ export class AgentService {
               trader_id: "plan",
               rule: diagnosticCode,
               field: "allocations/budget_usdc/leverage_cap",
-              current: s.plans
-                .at(-1)
-                ?.allocations.map((a) => ({
-                  trader_id: a.trader.id,
-                  amount_usdc: a.amount_usdc,
-                  leverage_cap: a.leverage_cap,
-                })),
+              current: s.plans.at(-1)?.allocations.map((a) => ({
+                trader_id: a.trader.id,
+                amount_usdc: a.amount_usdc,
+                leverage_cap: a.leverage_cap,
+              })),
               required: {
                 budget_usdc: pref.budget_usdc,
                 limits: planningPool.map((c) => ({
                   trader_id: c.id,
-                  minimum_usdc: cash(D.max(50, c.min_notional_usdc)),
+                  minimum_usdc: cash(minimumAllocation(pref, c)),
                   leverage_cap: recommendedLeverage(pref, c),
                 })),
               },
@@ -661,11 +660,7 @@ export class AgentService {
               "Selected leverage exceeds the current trader, market or risk cap.",
             );
           if (
-            D(x.amount_usdc).lt(
-              pref.portfolio_kind
-                ? D.max(50, pool[i].min_notional_usdc)
-                : pool[i].min_notional_usdc,
-            ) ||
+            D(x.amount_usdc).lt(minimumAllocation(pref, pool[i])) ||
             (pref.portfolio_kind !== "single" &&
               D(x.amount_usdc).gt(total.times("0.55")))
           )
@@ -1420,7 +1415,11 @@ export class AgentService {
         (a, i) =>
           a.leverage_cap >
             (recommendedLeverage(plan.preferences, rows[i]) ?? 0) ||
-          D(a.amount_usdc).lt(rows[i].min_notional_usdc),
+          D(a.amount_usdc).lt(
+            plan.preferences.portfolio_kind && rows[i].market === "perps"
+              ? minimumAllocation(plan.preferences, rows[i])
+              : rows[i].min_notional_usdc,
+          ),
       )
     )
       throw new AgentError(

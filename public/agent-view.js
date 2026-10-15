@@ -1082,7 +1082,7 @@ function planEditor(plan, data, callTool, start) {
     }
     add({
       trader,
-      amount_usdc: "50",
+      amount_usdc: trader.market === "perps" ? "" : "50",
       leverage_cap: limits.get(trader.id) ?? 1,
       stop_loss_pct: 30,
     });

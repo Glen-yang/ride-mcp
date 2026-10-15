@@ -70,7 +70,7 @@ it("distinguishes unavailable source scores from budget minimums without request
   );
   env.adapter.pool = [1, 2, 3].map(candidate);
   const low = await env.api.tool("alice", "recommend_traders", {
-    preferences: { ...pref, budget_usdc: "20" },
+    preferences: { ...pref, budget_usdc: "0.000001", basket_size: 3 },
   });
   assert.equal(
     (low.data.recommendation_diagnostics as any).blocker,

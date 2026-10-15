@@ -14,6 +14,10 @@ import { DepositReads } from "./deposits.js";
 import { PredictionVenue } from "./prediction.js";
 import { AgentError, failure } from "./contracts.js";
 import {
+  checkPerpsOrder,
+  HYPERLIQUID_MIN_OPEN_NOTIONAL_USDC,
+} from "./order_rules.js";
+import {
   D,
   cash,
   fingerprint,
@@ -488,7 +492,7 @@ export class CoreBridge {
           : D(row.drawdown_ratio).abs().times(100).toNumber(),
       atr_pct: atr,
       venue_max_leverage: 8,
-      min_notional_usdc: "10",
+      min_notional_usdc: HYPERLIQUID_MIN_OPEN_NOTIONAL_USDC,
       last_trade_at: (() => {
         const at =
           raw.tradeMetrics?.status === "available"
@@ -817,7 +821,10 @@ export class CoreBridge {
         meta.universe.map((x: any) => [`perps:${x.name}`, x.szDecimals]),
       ),
       min_notionals: Object.fromEntries(
-        Object.keys(prices).map((key) => [key, "10"]),
+        Object.keys(prices).map((key) => [
+          key,
+          HYPERLIQUID_MIN_OPEN_NOTIONAL_USDC,
+        ]),
       ),
       orders: orders.map((x: any) => ({
         id: String(x.oid),
@@ -1017,6 +1024,14 @@ export class CoreBridge {
         throw new AgentError("EXECUTION_REJECTED", "Price is unavailable.");
       const current = D(snap.positions[e.key] ?? 0),
         target = D(e.target_quantity);
+      if (p.preferences.portfolio_kind) {
+        const check = checkPerpsOrder(snap, e.key, e.target_quantity);
+        if (!check.ok)
+          throw new AgentError(
+            "EXECUTION_REJECTED",
+            `${check.code}: ${check.message}`,
+          );
+      }
       if (p.loss_latched && !target.isZero())
         throw new AgentError(
           "EXECUTION_REJECTED",

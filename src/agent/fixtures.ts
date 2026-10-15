@@ -44,6 +44,7 @@ export function snapshot(): AccountSnapshot {
     positions: {},
     prices: { "perps:BTC": "100", "perps:ETH": "100" },
     max_leverages: { "perps:BTC": 8, "perps:ETH": 8 },
+    quantity_decimals: { "perps:BTC": 8, "perps:ETH": 8 },
     min_notionals: { "perps:BTC": "10", "perps:ETH": "10" },
     orders: [],
     fills: [],

@@ -96,14 +96,17 @@ for (const count of [1, 2, 3, 4])
     assert.equal(plan.preferences.loss_trigger_pct, 10);
     assert.equal(adapter.submitCount, 0);
   });
-it("filters candidates for the target allocation before choosing, so an expensive first trader cannot block a feasible four-person basket", () => {
+it("Perps order notional does not become a collateral floor, while legacy allocation rules stay unchanged", () => {
   const rows = Array.from({ length: 11 }, (_, i) => ({
     ...candidate(i + 1),
     min_notional_usdc: i === 0 ? "150" : "10",
   }));
   const plan = recommend(pref, rows);
   assert.equal(plan.allocations.length, 4);
-  assert(!plan.allocations.some((a) => a.trader.id === rows[0].id));
+  assert(plan.allocations.some((a) => a.trader.id === rows[0].id));
+  const { portfolio_kind, basket_size, ...legacy } = pref;
+  const oldPlan = recommend(legacy, rows);
+  assert(!oldPlan.allocations.some((a) => a.trader.id === rows[0].id));
 });
 it("keeps two candidates visible and offers exact feasible counts instead of silently shrinking a four-person request", async () => {
   const { api, adapter } = env();

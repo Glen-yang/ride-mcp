@@ -22,6 +22,7 @@ import {
 } from "./ledger.js";
 import { event, AgentService } from "./service.js";
 import type { State } from "./repository.js";
+import { checkPerpsOrder } from "./order_rules.js";
 import {
   recordPerformance,
   recordReceipt,
@@ -480,6 +481,24 @@ export class AgentRunner {
                 .times(scale)
                 .toDecimalPlaces(snap.quantity_decimals?.[x.key] ?? 8);
               const current = D(t.lots[x.key]?.quantity ?? 0);
+              if (
+                p.preferences.portfolio_kind &&
+                x.market === "perps" &&
+                !D(x.quantity).isZero() &&
+                q.isZero() &&
+                current.isZero()
+              ) {
+                t.intents[x.key] = { ...x, quantity: "0" };
+                recordDecision(
+                  p,
+                  t,
+                  x,
+                  x.price,
+                  null,
+                  "BELOW_MINIMUM_QUANTITY",
+                );
+                continue;
+              }
               if (["wind_down", "risk_off"].includes(t.state)) {
                 if (current.isZero() || current.isPositive() !== q.isPositive())
                   q = D(0);
@@ -493,6 +512,7 @@ export class AgentRunner {
                 }
               }
               if (
+                !(p.preferences.portfolio_kind && x.market === "perps") &&
                 !q.isZero() &&
                 q
                   .abs()
@@ -578,14 +598,55 @@ export class AgentRunner {
             )
               continue;
             const target = targets.find((x) => x.key === key),
-              q = target?.quantity ?? "0",
               observed = snap.positions[key] ?? "0",
               price = snap.prices[key];
+            let q = target?.quantity ?? "0";
             if (!price) continue;
-            const allocations = internalCross(p, key, price);
+            let allocations = internalCross(p, key, price);
             checkpoint(state, p, key, now());
             if (D(q).eq(observed)) continue;
-            if (
+            if (p.preferences.portfolio_kind && key.startsWith("perps:")) {
+              const check = checkPerpsOrder(snap, key, q);
+              if (!check.ok) {
+                const { ok: _, ...details } = check;
+                if (
+                  !state.updates.some(
+                    (u) =>
+                      u.kind === check.code &&
+                      u.portfolio_id === p.id &&
+                      u.data.key === key &&
+                      now() - u.at < 3600_000,
+                  )
+                ) {
+                  event(state, check.code, p.id, check.message, {
+                    key,
+                    target_quantity: q,
+                    ...details,
+                  });
+                  // Routine skipped orders are visible in history, not push alerts.
+                  state.updates.at(-1)!.notification = "cancelled";
+                }
+                for (const sleeve of p.sleeves) {
+                  const intent = sleeve.intents[key];
+                  if (intent)
+                    recordDecision(p, sleeve, intent, price, null, check.code);
+                }
+                if (
+                  check.code === "BELOW_MINIMUM_NOTIONAL" &&
+                  !D(observed).isZero() &&
+                  !D(q).isZero() &&
+                  D(observed).isPositive() !== D(q).isPositive()
+                ) {
+                  // A flip is a close followed by a new opening leg. Preserve
+                  // the valid close when the new direction is below minimum.
+                  q = "0";
+                  for (const sleeve of p.sleeves)
+                    if (sleeve.intents[key]) sleeve.intents[key].quantity = "0";
+                  allocations = internalCross(p, key, price);
+                  checkpoint(state, p, key, now());
+                } else continue;
+              }
+            } else if (
               !D(q).isZero() &&
               D(q)
                 .minus(observed)

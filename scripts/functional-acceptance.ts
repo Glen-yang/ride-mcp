@@ -525,6 +525,76 @@ try {
     assert.equal(guide.protocol, "ride-guide-v1");
     return { release: guide.release, sha256: guide.sha256, tools: 25 };
   });
+  await check(
+    "45 20-USDC Perps：MCP/CLI 推荐、重算和确认前不下单",
+    async () => {
+      // Reuse the existing fixture login; a preview needs no new OAuth client.
+      const c = alice;
+      venue.available.set(users.alice, "20");
+      try {
+        const before = venue.submits.length;
+        const first = await ok(c.client, "recommend_traders", {
+          preferences: { ...pref, budget_usdc: "20" },
+          trader_ids: [venue.pool[0].id],
+        });
+        assert.equal(first.data.plan.allocations[0].amount_usdc, "20.000000");
+        assert.equal(
+          first.data.planning_constraints.perps_product_minimum_usdc,
+          null,
+        );
+        const edited = await ok(c.client, "recalculate_plan", {
+          plan_id: first.data.plan.id,
+          allocations: [
+            {
+              trader_id: venue.pool[0].id,
+              amount_usdc: "20",
+              leverage_cap: 3,
+              stop_loss_pct: 25,
+            },
+          ],
+        });
+        await saveSession(
+          {
+            server: base + "/mcp",
+            tokens: c.tokens,
+            expires_at: now() + 3600000,
+          },
+          c.configDir,
+        );
+        const cliPreview = JSON.parse(
+          (
+            await run(process.execPath, ["dist/cli.js", "recommend"], {
+              cwd: root,
+              env: { PATH: process.env.PATH, RIDE_CONFIG_DIR: c.configDir },
+            })
+          ).stdout,
+        );
+        assert.equal(
+          cliPreview.data.plan.allocations[0].amount_usdc,
+          "20.000000",
+        );
+        assert.equal(cliPreview.data.plan.allocations[0].stop_loss_pct, 25);
+        assert.equal(cliPreview.data.plan.preferences.loss_trigger_pct, 20);
+        const proposal = (
+          await ok(c.client, "start_copy", reviewStart(cliPreview.data.plan))
+        ).data.proposal;
+        assert.equal(proposal.status, "requires_confirmation");
+        assert.equal(venue.submits.length, before);
+        return {
+          budget_usdc: "20",
+          allocation_usdc: edited.data.plan.allocations[0].amount_usdc,
+          cli_preserves_amount_and_risk: true,
+          status: proposal.status,
+          submitted_orders: 0,
+        };
+      } finally {
+        venue.available.delete(users.alice);
+        await repo.pool.query("DELETE FROM ride_agent_state WHERE user_id=$1", [
+          users.alice,
+        ]);
+      }
+    },
+  );
   await check("01 偏好：500 USDC / 20% / BTC ETH", async () => {
     const v = await ok(alice.client, "set_preferences", pref);
     assert.equal(v.data.preferences.budget_usdc, "500");
@@ -1893,9 +1963,9 @@ try {
       }
       const failed = await tool(widgetClient, "recommend_traders", {
         preferences: {
-          budget_usdc: "40",
-          basket_size: 1,
-          portfolio_kind: "single",
+          budget_usdc: "0.000001",
+          basket_size: 4,
+          portfolio_kind: "basket",
         },
       });
       assert.equal(failed.data.plan, null);
@@ -1906,7 +1976,7 @@ try {
       );
       assert.equal(
         failed.data.planning_constraints.minimum_allocation_usdc,
-        "50",
+        null,
       );
       return {
         exact_counts: [1, 2, 3, 4],

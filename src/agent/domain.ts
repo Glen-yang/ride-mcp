@@ -353,7 +353,14 @@ export function eligibleCandidates(
     .sort((a, b) => b.score - a.score || a.id.localeCompare(b.id));
 }
 export const minimumAllocation = (p: Preferences, c: Candidate) =>
-  p.portfolio_kind ? D.max(50, c.min_notional_usdc) : D(c.min_notional_usdc);
+  // Perps collateral is not order notional. New Agent plans accept any
+  // positive micro-USDC allocation; each sized order is checked at execution.
+  // Keep Prediction and legacy plan allocation rules unchanged.
+  p.portfolio_kind && c.market === "perps"
+    ? D("0.000001")
+    : p.portfolio_kind
+      ? D.max(50, c.min_notional_usdc)
+      : D(c.min_notional_usdc);
 export function requestedTraderCount(p: Preferences): number {
   return p.portfolio_kind === "single"
     ? 1
@@ -584,9 +591,10 @@ export function recommendationDiagnostics(
         {
           per_trader_usdc: cash(minimumAllocation(p, c)),
           venue_minimum_usdc: c.min_notional_usdc,
-          policy_minimum_usdc: p.portfolio_kind ? "50.000000" : null,
+          policy_minimum_usdc:
+            p.portfolio_kind && c.market === "prediction" ? "50.000000" : null,
         },
-        "Allocation per trader is below the venue or disclosed product minimum. Choose a feasible smaller count or review the budget.",
+        "Allocation is below the applicable positive-USDC, legacy venue or Prediction product minimum. Perps order minimums are checked separately after sizing.",
       );
     return {
       trader_id: c.id,

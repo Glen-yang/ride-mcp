@@ -90,6 +90,8 @@ it("recommended risk changes with risk label, while explicit numbers and assets/
   assert.equal(c.answers.market, "perps");
 });
 for (const [budget, count, expected] of [
+  [20, 1, 1],
+  [20, 11, 4],
   [50, 1, 1],
   [100, 2, 2],
   [150, 3, 3],
@@ -236,15 +238,46 @@ it("explicit selection overrides an old count, persists through edits, and never
   });
   assert.equal(reset.plan.allocations.length, 2);
 });
-it("a too-small budget returns candidates, specific minimum and feasible alternatives without requesting funding", async () => {
+it("sub-50 Perps allocations support preview and editing without authorizing execution", async () => {
   const { call, adapter } = env(11);
   const d = await call("recommend_traders", {
-    preferences: { budget_usdc: "40", risk_tolerance: "medium" },
+    preferences: {
+      budget_usdc: "20",
+      risk_tolerance: "medium",
+      market: "perps",
+    },
   });
-  assert.equal(d.plan, null);
+  assert.equal(d.plan.allocations.length, 4);
+  assert.ok(d.plan.allocations.every((a: any) => a.amount_usdc === "5.000000"));
   assert.equal(d.candidates.length, 11);
-  assert.equal(d.planning_constraints.minimum_allocation_usdc, "50");
-  assert.equal(d.recommendation_diagnostics.blocker, "budget_minimums");
+  assert.equal(d.planning_constraints.minimum_allocation_usdc, null);
+  assert.equal(d.planning_constraints.perps_product_minimum_usdc, null);
+  const edited = await call("recalculate_plan", {
+    plan_id: d.plan.id,
+    allocations: d.plan.allocations.map((a: any) => ({
+      trader_id: a.trader.id,
+      amount_usdc: "4",
+      stop_loss_pct: 25,
+    })),
+  });
+  assert.ok(
+    edited.plan.allocations.every((a: any) => a.amount_usdc === "4.000000"),
+  );
+  const refreshed = await call("recommend_traders", {
+    preferences: { assets: ["BTC", "ETH"] },
+  });
+  assert.ok(
+    refreshed.plan.allocations.every(
+      (a: any) => a.amount_usdc === "4.000000" && a.stop_loss_pct === 25,
+    ),
+  );
+  assert.equal(refreshed.plan.preferences.budget_usdc, "20");
+  assert.equal(refreshed.plan.preferences.loss_trigger_pct, 20);
+  const proposal = await call("start_copy", {
+    plan_id: refreshed.plan.id,
+    compatibility_ack: compatibility(refreshed.plan).fingerprint,
+  });
+  assert.equal(proposal.proposal.status, "requires_confirmation");
   assert.equal(adapter.submitCount, 0);
 });
 it("partial allocation and preference edits retain exits, copy mode and saved answers", async () => {

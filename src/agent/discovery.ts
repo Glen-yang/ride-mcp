@@ -202,8 +202,15 @@ export function conversationView(
     selection_origin: selectedByUser ? "user" : "system_recommendation",
     planning_constraints: {
       max_traders: 8,
-      minimum_allocation_usdc: "50",
-      type: "Ride Agent product allocation minimum; venue minimums also apply",
+      minimum_allocation_usdc:
+        candidates.length && candidates.every((c) => c.market === "prediction")
+          ? "50"
+          : null,
+      perps_product_minimum_usdc: null,
+      prediction_product_minimum_usdc: "50",
+      type: "Positive Perps USDC allocation; live venue minimums apply to each sized order, not to allocated collateral. Prediction allocation rules are unchanged.",
+      order_minimum_validation:
+        "after_netting_and_quantity_rounding_at_execution",
       leverage_mode: "cap",
       follow_source_leverage_supported: false,
     },
