@@ -1,9 +1,13 @@
 import { unzipSync, strFromU8 } from "fflate";
 import { D, now, type Candidate } from "./domain.js";
+import {
+  Gate,
+  type PredictionEquityHistory,
+} from "./prediction_equity_history.js";
 
 const DAY = 86_400_000;
 const BASIS = "polymarket_economic_nav_1m_daily_cashflow_adjusted_v1";
-type Metrics = Pick<
+export type Metrics = Pick<
   Candidate,
   | "source_roi_pct"
   | "source_drawdown_pct"
@@ -11,6 +15,19 @@ type Metrics = Pick<
   | "metric_provenance"
   | "metric_unavailable_reason"
 >;
+export interface EquityHistoryRecord {
+  version: 2;
+  computed_at: number;
+  refresh_at: number;
+  metrics: Metrics;
+  evidence: unknown;
+}
+export interface EquityHistoryOptions {
+  loader: Pick<PredictionEquityHistory, "load">;
+  key(wallet: string): string;
+  read(key: string): Promise<EquityHistoryRecord | null>;
+  write(key: string, record: EquityHistoryRecord): Promise<void>;
+}
 type Flow = {
   timestamp: number;
   type: "DEPOSIT" | "WITHDRAWAL";
@@ -234,7 +251,99 @@ export function predictionMetrics(
 export class PredictionHistory {
   private cache = new Map<string, { until: number; value: Metrics }>();
   private pending = new Map<string, Promise<Metrics>>();
+  private reconstructed = new Map<string, EquityHistoryRecord>();
+  private hydrated = new Map<string, Promise<void>>();
+  private reconstructing = new Map<string, Promise<void>>();
+  private retries = new Map<string, { at: number; reason: string }>();
+  private jobs = new Gate(2);
+  constructor(private equity?: EquityHistoryOptions) {}
   async metrics(wallet: string): Promise<Metrics> {
+    if (!this.equity) return this.nativeMetrics(wallet);
+    const key = this.equity.key(wallet);
+    let hydration = this.hydrated.get(key);
+    if (!hydration) {
+      hydration = this.equity
+        .read(key)
+        .then((record) => {
+          if (record && this.validRecord(record))
+            this.reconstructed.set(key, record);
+        })
+        .catch(() => {});
+      this.hydrated.set(key, hydration);
+    }
+    await hydration;
+    let record = this.reconstructed.get(key);
+    if (record && !this.validRecord(record)) {
+      this.reconstructed.delete(key);
+      record = undefined;
+    }
+    if (record && record.refresh_at > now()) return record.metrics;
+    const retry = this.retries.get(key);
+    if (!this.reconstructing.has(key) && (!retry || retry.at <= now())) {
+      const job = this.jobs
+        .run(async () => {
+          try {
+            const result = await this.equity!.loader.load(wallet);
+            const record: EquityHistoryRecord = {
+              version: 2,
+              computed_at: now(),
+              refresh_at: now() + 3600_000,
+              ...result,
+            };
+            if (!this.validRecord(record))
+              throw new Error("invalid_reconstructed_metrics");
+            this.reconstructed.set(key, record);
+            await this.equity!.write(key, record);
+            this.retries.delete(key);
+          } catch (e) {
+            this.retries.set(key, {
+              at: now() + 5 * 60_000,
+              reason:
+                e instanceof Error && /^[a-z_]+$/.test(e.message)
+                  ? e.message
+                  : "equity_reconstruction_unavailable",
+            });
+          }
+        })
+        .finally(() => this.reconstructing.delete(key));
+      this.reconstructing.set(key, job);
+    }
+    if (record) return record.metrics;
+    // Keep the existing verified path available while bounded reconstruction
+    // warms. Missing risk data never becomes zero or a smaller risk threshold.
+    const fallback = await this.nativeMetrics(wallet);
+    const completed = this.reconstructed.get(key);
+    if (completed && this.validRecord(completed)) return completed.metrics;
+    if (fallback.metric_window) return fallback;
+    return {
+      ...fallback,
+      metric_unavailable_reason:
+        this.retries.get(key)?.reason ??
+        "equity_history_reconstruction_pending",
+    };
+  }
+  private validRecord(r: EquityHistoryRecord) {
+    const m = r.metrics,
+      window = m?.metric_window;
+    return (
+      r.version === 2 &&
+      Number.isFinite(r.computed_at) &&
+      r.computed_at <= now() + 60_000 &&
+      Number.isFinite(r.refresh_at) &&
+      window?.basis === "polygon_inventory_nav_1m_daily_v2" &&
+      window.end_at <= now() + 60_000 &&
+      now() - window.end_at < 36 * 3600_000 &&
+      window.end_at - window.start_at >= 28 * DAY &&
+      validNumber(m.source_drawdown_pct) &&
+      m.source_drawdown_pct >= 0 &&
+      m.source_drawdown_pct <= 100 &&
+      validNumber(m.source_roi_pct) &&
+      m.source_roi_pct >= -100 &&
+      m.metric_provenance?.source ===
+        "polygon_transfers_and_polymarket_historical_marks"
+    );
+  }
+  private async nativeMetrics(wallet: string): Promise<Metrics> {
     const key = wallet.toLowerCase(),
       cached = this.cache.get(key);
     if (cached && cached.until > now()) return cached.value;
