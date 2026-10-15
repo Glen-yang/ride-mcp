@@ -75,6 +75,8 @@ export function traderRow(c: Candidate) {
     historical_roi_pct: c.source_roi_pct,
     historical_drawdown_pct: c.source_drawdown_pct,
     metric_window: c.metric_window ?? null,
+    metric_provenance: c.metric_provenance ?? null,
+    metric_unavailable_reason: c.metric_unavailable_reason ?? null,
     eligibility: c.eligibility,
     scored_at: c.scored_at,
   };
