@@ -1,0 +1,1231 @@
+{
+  "source": "https://data-api.polymarket.com/v2/docs",
+  "observed_at": "2026-10-15T10:09:33Z",
+  "wallet": "0x0000000000000000000000000000000000000001",
+  "series": {
+    "proxy_wallet": "0x0000000000000000000000000000000000000001",
+    "interval": "1m",
+    "fidelity": "1d",
+    "source_fidelity": "1d",
+    "points": [
+      {
+        "timestamp": 1789516800,
+        "source_block": 93871958,
+        "economic_pnl": 292193.807396,
+        "position_pnl": 291739.194196,
+        "wallet_income": 454.6132,
+        "deposits": null,
+        "withdrawals": null,
+        "cashflow_net": null
+      },
+      {
+        "timestamp": 1789603200,
+        "source_block": 93924869,
+        "economic_pnl": 295390.734637,
+        "position_pnl": 294936.121437,
+        "wallet_income": 454.6132,
+        "deposits": null,
+        "withdrawals": null,
+        "cashflow_net": null
+      },
+      {
+        "timestamp": 1789689600,
+        "source_block": 93987374,
+        "economic_pnl": 295582.763094,
+        "position_pnl": 295128.149894,
+        "wallet_income": 454.6132,
+        "deposits": null,
+        "withdrawals": null,
+        "cashflow_net": null
+      },
+      {
+        "timestamp": 1789776000,
+        "source_block": 94045780,
+        "economic_pnl": 295900.675055,
+        "position_pnl": 295446.061855,
+        "wallet_income": 454.6132,
+        "deposits": null,
+        "withdrawals": null,
+        "cashflow_net": null
+      },
+      {
+        "timestamp": 1789862400,
+        "source_block": 94103491,
+        "economic_pnl": 297336.709599,
+        "position_pnl": 296882.096399,
+        "wallet_income": 454.6132,
+        "deposits": null,
+        "withdrawals": null,
+        "cashflow_net": null
+      },
+      {
+        "timestamp": 1789948800,
+        "source_block": 94149186,
+        "economic_pnl": 297574.782916,
+        "position_pnl": 297120.169716,
+        "wallet_income": 454.6132,
+        "deposits": null,
+        "withdrawals": null,
+        "cashflow_net": null
+      },
+      {
+        "timestamp": 1790035200,
+        "source_block": 94197377,
+        "economic_pnl": 297781.282609,
+        "position_pnl": 297326.669409,
+        "wallet_income": 454.6132,
+        "deposits": null,
+        "withdrawals": null,
+        "cashflow_net": null
+      },
+      {
+        "timestamp": 1790121600,
+        "source_block": 94259910,
+        "economic_pnl": 298325.724822,
+        "position_pnl": 297871.111622,
+        "wallet_income": 454.6132,
+        "deposits": null,
+        "withdrawals": null,
+        "cashflow_net": null
+      },
+      {
+        "timestamp": 1790208000,
+        "source_block": 94334393,
+        "economic_pnl": 298605.196173,
+        "position_pnl": 298150.582973,
+        "wallet_income": 454.6132,
+        "deposits": null,
+        "withdrawals": null,
+        "cashflow_net": null
+      },
+      {
+        "timestamp": 1790294400,
+        "source_block": 94392099,
+        "economic_pnl": 298700.693818,
+        "position_pnl": 298246.080618,
+        "wallet_income": 454.6132,
+        "deposits": null,
+        "withdrawals": null,
+        "cashflow_net": null
+      },
+      {
+        "timestamp": 1790380800,
+        "source_block": 94449723,
+        "economic_pnl": 297031.74144,
+        "position_pnl": 296577.12824,
+        "wallet_income": 454.6132,
+        "deposits": null,
+        "withdrawals": null,
+        "cashflow_net": null
+      },
+      {
+        "timestamp": 1790467200,
+        "source_block": 94507366,
+        "economic_pnl": 299772.224146,
+        "position_pnl": 299317.610946,
+        "wallet_income": 454.6132,
+        "deposits": null,
+        "withdrawals": null,
+        "cashflow_net": null
+      },
+      {
+        "timestamp": 1790553600,
+        "source_block": 94560166,
+        "economic_pnl": 300306.02635,
+        "position_pnl": 299851.41315,
+        "wallet_income": 454.6132,
+        "deposits": null,
+        "withdrawals": null,
+        "cashflow_net": null
+      },
+      {
+        "timestamp": 1790640000,
+        "source_block": 94617801,
+        "economic_pnl": 301265.360286,
+        "position_pnl": 300810.747086,
+        "wallet_income": 454.6132,
+        "deposits": null,
+        "withdrawals": null,
+        "cashflow_net": null
+      },
+      {
+        "timestamp": 1790726400,
+        "source_block": 94680277,
+        "economic_pnl": 303174.814754,
+        "position_pnl": 302720.201554,
+        "wallet_income": 454.6132,
+        "deposits": null,
+        "withdrawals": null,
+        "cashflow_net": null
+      },
+      {
+        "timestamp": 1790812800,
+        "source_block": 94737763,
+        "economic_pnl": 303288.262597,
+        "position_pnl": 302833.649397,
+        "wallet_income": 454.6132,
+        "deposits": null,
+        "withdrawals": null,
+        "cashflow_net": null
+      },
+      {
+        "timestamp": 1790899200,
+        "source_block": 94788164,
+        "economic_pnl": 303931.404776,
+        "position_pnl": 303476.791576,
+        "wallet_income": 454.6132,
+        "deposits": null,
+        "withdrawals": null,
+        "cashflow_net": null
+      },
+      {
+        "timestamp": 1790985600,
+        "source_block": 94852965,
+        "economic_pnl": 304004.611348,
+        "position_pnl": 303549.998148,
+        "wallet_income": 454.6132,
+        "deposits": null,
+        "withdrawals": null,
+        "cashflow_net": null
+      },
+      {
+        "timestamp": 1791072000,
+        "source_block": 94893766,
+        "economic_pnl": 304009.338463,
+        "position_pnl": 303554.725263,
+        "wallet_income": 454.6132,
+        "deposits": null,
+        "withdrawals": null,
+        "cashflow_net": null
+      },
+      {
+        "timestamp": 1791158400,
+        "source_block": 94963366,
+        "economic_pnl": 304026.777421,
+        "position_pnl": 303572.164221,
+        "wallet_income": 454.6132,
+        "deposits": null,
+        "withdrawals": null,
+        "cashflow_net": null
+      },
+      {
+        "timestamp": 1791244800,
+        "source_block": 95023388,
+        "economic_pnl": 304105.884067,
+        "position_pnl": 303651.270867,
+        "wallet_income": 454.6132,
+        "deposits": null,
+        "withdrawals": null,
+        "cashflow_net": null
+      },
+      {
+        "timestamp": 1791331200,
+        "source_block": 95078588,
+        "economic_pnl": 304828.576792,
+        "position_pnl": 304373.963592,
+        "wallet_income": 454.6132,
+        "deposits": null,
+        "withdrawals": null,
+        "cashflow_net": null
+      },
+      {
+        "timestamp": 1791417600,
+        "source_block": 95138590,
+        "economic_pnl": 304707.276437,
+        "position_pnl": 304252.663237,
+        "wallet_income": 454.6132,
+        "deposits": null,
+        "withdrawals": null,
+        "cashflow_net": null
+      },
+      {
+        "timestamp": 1791504000,
+        "source_block": 95188992,
+        "economic_pnl": 305044.397328,
+        "position_pnl": 304589.784128,
+        "wallet_income": 454.6132,
+        "deposits": null,
+        "withdrawals": null,
+        "cashflow_net": null
+      },
+      {
+        "timestamp": 1791590400,
+        "source_block": 95239393,
+        "economic_pnl": 305501.375078,
+        "position_pnl": 305046.761878,
+        "wallet_income": 454.6132,
+        "deposits": null,
+        "withdrawals": null,
+        "cashflow_net": null
+      },
+      {
+        "timestamp": 1791676800,
+        "source_block": 95268193,
+        "economic_pnl": 305704.12609,
+        "position_pnl": 305249.51289,
+        "wallet_income": 454.6132,
+        "deposits": null,
+        "withdrawals": null,
+        "cashflow_net": null
+      },
+      {
+        "timestamp": 1791763200,
+        "source_block": 95349794,
+        "economic_pnl": 305709.1301,
+        "position_pnl": 305254.5169,
+        "wallet_income": 454.6132,
+        "deposits": null,
+        "withdrawals": null,
+        "cashflow_net": null
+      },
+      {
+        "timestamp": 1791849600,
+        "source_block": 95428994,
+        "economic_pnl": 305685.816174,
+        "position_pnl": 305231.202974,
+        "wallet_income": 454.6132,
+        "deposits": null,
+        "withdrawals": null,
+        "cashflow_net": null
+      },
+      {
+        "timestamp": 1791936000,
+        "source_block": 95486594,
+        "economic_pnl": 305738.137216,
+        "position_pnl": 305283.524016,
+        "wallet_income": 454.6132,
+        "deposits": null,
+        "withdrawals": null,
+        "cashflow_net": null
+      },
+      {
+        "timestamp": 1792022400,
+        "source_block": 95539394,
+        "economic_pnl": 305736.066343,
+        "position_pnl": 305281.453143,
+        "wallet_income": 454.6132,
+        "deposits": null,
+        "withdrawals": null,
+        "cashflow_net": null
+      },
+      {
+        "timestamp": 1792054016,
+        "source_block": 95565794,
+        "economic_pnl": 305775.006028,
+        "position_pnl": 305320.392828,
+        "wallet_income": 454.6132,
+        "deposits": null,
+        "withdrawals": null,
+        "cashflow_net": null
+      }
+    ]
+  },
+  "flows": [
+    {
+      "proxy_wallet": "0x0000000000000000000000000000000000000001",
+      "timestamp": 1730951748,
+      "type": "DEPOSIT",
+      "usdc_size": 100.004708
+    },
+    {
+      "proxy_wallet": "0x0000000000000000000000000000000000000001",
+      "timestamp": 1731002186,
+      "type": "WITHDRAWAL",
+      "usdc_size": 100.305609
+    },
+    {
+      "proxy_wallet": "0x0000000000000000000000000000000000000001",
+      "timestamp": 1731013143,
+      "type": "DEPOSIT",
+      "usdc_size": 2000.124291
+    },
+    {
+      "proxy_wallet": "0x0000000000000000000000000000000000000001",
+      "timestamp": 1731020450,
+      "type": "DEPOSIT",
+      "usdc_size": 3000.085826
+    },
+    {
+      "proxy_wallet": "0x0000000000000000000000000000000000000001",
+      "timestamp": 1731024313,
+      "type": "DEPOSIT",
+      "usdc_size": 4000.130216
+    },
+    {
+      "proxy_wallet": "0x0000000000000000000000000000000000000001",
+      "timestamp": 1731105902,
+      "type": "DEPOSIT",
+      "usdc_size": 9000.049651
+    },
+    {
+      "proxy_wallet": "0x0000000000000000000000000000000000000001",
+      "timestamp": 1731114897,
+      "type": "DEPOSIT",
+      "usdc_size": 11000.160153
+    },
+    {
+      "proxy_wallet": "0x0000000000000000000000000000000000000001",
+      "timestamp": 1731203220,
+      "type": "DEPOSIT",
+      "usdc_size": 30000.70519
+    },
+    {
+      "proxy_wallet": "0x0000000000000000000000000000000000000001",
+      "timestamp": 1731215330,
+      "type": "DEPOSIT",
+      "usdc_size": 29752.365261
+    },
+    {
+      "proxy_wallet": "0x0000000000000000000000000000000000000001",
+      "timestamp": 1731375316,
+      "type": "DEPOSIT",
+      "usdc_size": 99006.8677
+    },
+    {
+      "proxy_wallet": "0x0000000000000000000000000000000000000001",
+      "timestamp": 1735722058,
+      "type": "WITHDRAWAL",
+      "usdc_size": 1000.0
+    },
+    {
+      "proxy_wallet": "0x0000000000000000000000000000000000000001",
+      "timestamp": 1735722214,
+      "type": "WITHDRAWAL",
+      "usdc_size": 42500.0
+    },
+    {
+      "proxy_wallet": "0x0000000000000000000000000000000000000001",
+      "timestamp": 1735722484,
+      "type": "WITHDRAWAL",
+      "usdc_size": 150000.240313
+    },
+    {
+      "proxy_wallet": "0x0000000000000000000000000000000000000001",
+      "timestamp": 1735722950,
+      "type": "DEPOSIT",
+      "usdc_size": 23001.089311
+    },
+    {
+      "proxy_wallet": "0x0000000000000000000000000000000000000001",
+      "timestamp": 1735764931,
+      "type": "DEPOSIT",
+      "usdc_size": 170459.060966
+    },
+    {
+      "proxy_wallet": "0x0000000000000000000000000000000000000001",
+      "timestamp": 1735938647,
+      "type": "DEPOSIT",
+      "usdc_size": 59569.462295
+    },
+    {
+      "proxy_wallet": "0x0000000000000000000000000000000000000001",
+      "timestamp": 1739125710,
+      "type": "DEPOSIT",
+      "usdc_size": 999.52191
+    },
+    {
+      "proxy_wallet": "0x0000000000000000000000000000000000000001",
+      "timestamp": 1739126539,
+      "type": "DEPOSIT",
+      "usdc_size": 1999.00632
+    },
+    {
+      "proxy_wallet": "0x0000000000000000000000000000000000000001",
+      "timestamp": 1739127497,
+      "type": "DEPOSIT",
+      "usdc_size": 5997.10209
+    },
+    {
+      "proxy_wallet": "0x0000000000000000000000000000000000000001",
+      "timestamp": 1739128798,
+      "type": "DEPOSIT",
+      "usdc_size": 39994.77183
+    },
+    {
+      "proxy_wallet": "0x0000000000000000000000000000000000000001",
+      "timestamp": 1739130431,
+      "type": "DEPOSIT",
+      "usdc_size": 727.80375
+    },
+    {
+      "proxy_wallet": "0x0000000000000000000000000000000000000001",
+      "timestamp": 1739227610,
+      "type": "DEPOSIT",
+      "usdc_size": 10002.95633
+    },
+    {
+      "proxy_wallet": "0x0000000000000000000000000000000000000001",
+      "timestamp": 1739228216,
+      "type": "DEPOSIT",
+      "usdc_size": 39950.79966
+    },
+    {
+      "proxy_wallet": "0x0000000000000000000000000000000000000001",
+      "timestamp": 1739228924,
+      "type": "DEPOSIT",
+      "usdc_size": 19979.37063
+    },
+    {
+      "proxy_wallet": "0x0000000000000000000000000000000000000001",
+      "timestamp": 1739231102,
+      "type": "DEPOSIT",
+      "usdc_size": 39974.93971
+    },
+    {
+      "proxy_wallet": "0x0000000000000000000000000000000000000001",
+      "timestamp": 1739232202,
+      "type": "DEPOSIT",
+      "usdc_size": 40001.45578
+    },
+    {
+      "proxy_wallet": "0x0000000000000000000000000000000000000001",
+      "timestamp": 1739232376,
+      "type": "DEPOSIT",
+      "usdc_size": 47997.18318
+    },
+    {
+      "proxy_wallet": "0x0000000000000000000000000000000000000001",
+      "timestamp": 1739232516,
+      "type": "DEPOSIT",
+      "usdc_size": 949.01282
+    },
+    {
+      "proxy_wallet": "0x0000000000000000000000000000000000000001",
+      "timestamp": 1745265157,
+      "type": "DEPOSIT",
+      "usdc_size": 19993.62759
+    },
+    {
+      "proxy_wallet": "0x0000000000000000000000000000000000000001",
+      "timestamp": 1745265964,
+      "type": "DEPOSIT",
+      "usdc_size": 70000.0
+    },
+    {
+      "proxy_wallet": "0x0000000000000000000000000000000000000001",
+      "timestamp": 1745266634,
+      "type": "DEPOSIT",
+      "usdc_size": 8990.90181
+    },
+    {
+      "proxy_wallet": "0x0000000000000000000000000000000000000001",
+      "timestamp": 1745266830,
+      "type": "DEPOSIT",
+      "usdc_size": 452.066359
+    },
+    {
+      "proxy_wallet": "0x0000000000000000000000000000000000000001",
+      "timestamp": 1746324897,
+      "type": "WITHDRAWAL",
+      "usdc_size": 700.0
+    },
+    {
+      "proxy_wallet": "0x0000000000000000000000000000000000000001",
+      "timestamp": 1746502327,
+      "type": "WITHDRAWAL",
+      "usdc_size": 1080.0
+    },
+    {
+      "proxy_wallet": "0x0000000000000000000000000000000000000001",
+      "timestamp": 1747250432,
+      "type": "WITHDRAWAL",
+      "usdc_size": 1220.0
+    },
+    {
+      "proxy_wallet": "0x0000000000000000000000000000000000000001",
+      "timestamp": 1747938240,
+      "type": "DEPOSIT",
+      "usdc_size": 69026.778067
+    },
+    {
+      "proxy_wallet": "0x0000000000000000000000000000000000000001",
+      "timestamp": 1747938470,
+      "type": "DEPOSIT",
+      "usdc_size": 628.30473
+    },
+    {
+      "proxy_wallet": "0x0000000000000000000000000000000000000001",
+      "timestamp": 1748056375,
+      "type": "WITHDRAWAL",
+      "usdc_size": 755.0
+    },
+    {
+      "proxy_wallet": "0x0000000000000000000000000000000000000001",
+      "timestamp": 1749269496,
+      "type": "DEPOSIT",
+      "usdc_size": 754.0
+    },
+    {
+      "proxy_wallet": "0x0000000000000000000000000000000000000001",
+      "timestamp": 1749269816,
+      "type": "WITHDRAWAL",
+      "usdc_size": 100.0
+    },
+    {
+      "proxy_wallet": "0x0000000000000000000000000000000000000001",
+      "timestamp": 1749270380,
+      "type": "DEPOSIT",
+      "usdc_size": 99.160076
+    },
+    {
+      "proxy_wallet": "0x0000000000000000000000000000000000000001",
+      "timestamp": 1750357038,
+      "type": "DEPOSIT",
+      "usdc_size": 98884.422408
+    },
+    {
+      "proxy_wallet": "0x0000000000000000000000000000000000000001",
+      "timestamp": 1750357192,
+      "type": "DEPOSIT",
+      "usdc_size": 500.415107
+    },
+    {
+      "proxy_wallet": "0x0000000000000000000000000000000000000001",
+      "timestamp": 1751134014,
+      "type": "DEPOSIT",
+      "usdc_size": 98999.999999
+    },
+    {
+      "proxy_wallet": "0x0000000000000000000000000000000000000001",
+      "timestamp": 1751134112,
+      "type": "DEPOSIT",
+      "usdc_size": 408.0
+    },
+    {
+      "proxy_wallet": "0x0000000000000000000000000000000000000001",
+      "timestamp": 1751226431,
+      "type": "DEPOSIT",
+      "usdc_size": 98999.999999
+    },
+    {
+      "proxy_wallet": "0x0000000000000000000000000000000000000001",
+      "timestamp": 1751226547,
+      "type": "DEPOSIT",
+      "usdc_size": 474.0
+    },
+    {
+      "proxy_wallet": "0x0000000000000000000000000000000000000001",
+      "timestamp": 1751392049,
+      "type": "WITHDRAWAL",
+      "usdc_size": 1480.0
+    },
+    {
+      "proxy_wallet": "0x0000000000000000000000000000000000000001",
+      "timestamp": 1753926031,
+      "type": "WITHDRAWAL",
+      "usdc_size": 1450.0
+    },
+    {
+      "proxy_wallet": "0x0000000000000000000000000000000000000001",
+      "timestamp": 1754089546,
+      "type": "WITHDRAWAL",
+      "usdc_size": 925.0
+    },
+    {
+      "proxy_wallet": "0x0000000000000000000000000000000000000001",
+      "timestamp": 1758000314,
+      "type": "WITHDRAWAL",
+      "usdc_size": 1480.0
+    },
+    {
+      "proxy_wallet": "0x0000000000000000000000000000000000000001",
+      "timestamp": 1758212452,
+      "type": "DEPOSIT",
+      "usdc_size": 98988.644624
+    },
+    {
+      "proxy_wallet": "0x0000000000000000000000000000000000000001",
+      "timestamp": 1758212552,
+      "type": "DEPOSIT",
+      "usdc_size": 459.000001
+    },
+    {
+      "proxy_wallet": "0x0000000000000000000000000000000000000001",
+      "timestamp": 1758657473,
+      "type": "WITHDRAWAL",
+      "usdc_size": 750.0
+    },
+    {
+      "proxy_wallet": "0x0000000000000000000000000000000000000001",
+      "timestamp": 1758822642,
+      "type": "WITHDRAWAL",
+      "usdc_size": 760.0
+    },
+    {
+      "proxy_wallet": "0x0000000000000000000000000000000000000001",
+      "timestamp": 1759441347,
+      "type": "WITHDRAWAL",
+      "usdc_size": 2147.0
+    },
+    {
+      "proxy_wallet": "0x0000000000000000000000000000000000000001",
+      "timestamp": 1759448649,
+      "type": "DEPOSIT",
+      "usdc_size": 98988.273571
+    },
+    {
+      "proxy_wallet": "0x0000000000000000000000000000000000000001",
+      "timestamp": 1759448761,
+      "type": "DEPOSIT",
+      "usdc_size": 462.0
+    },
+    {
+      "proxy_wallet": "0x0000000000000000000000000000000000000001",
+      "timestamp": 1759876810,
+      "type": "WITHDRAWAL",
+      "usdc_size": 1490.0
+    },
+    {
+      "proxy_wallet": "0x0000000000000000000000000000000000000001",
+      "timestamp": 1760727736,
+      "type": "WITHDRAWAL",
+      "usdc_size": 745.0
+    },
+    {
+      "proxy_wallet": "0x0000000000000000000000000000000000000001",
+      "timestamp": 1763104572,
+      "type": "DEPOSIT",
+      "usdc_size": 0.01
+    },
+    {
+      "proxy_wallet": "0x0000000000000000000000000000000000000001",
+      "timestamp": 1764033465,
+      "type": "WITHDRAWAL",
+      "usdc_size": 745.0
+    },
+    {
+      "proxy_wallet": "0x0000000000000000000000000000000000000001",
+      "timestamp": 1764204869,
+      "type": "DEPOSIT",
+      "usdc_size": 119982.480665
+    },
+    {
+      "proxy_wallet": "0x0000000000000000000000000000000000000001",
+      "timestamp": 1764205057,
+      "type": "DEPOSIT",
+      "usdc_size": 3121.943111
+    },
+    {
+      "proxy_wallet": "0x0000000000000000000000000000000000000001",
+      "timestamp": 1764455845,
+      "type": "DEPOSIT",
+      "usdc_size": 72995.837923
+    },
+    {
+      "proxy_wallet": "0x0000000000000000000000000000000000000001",
+      "timestamp": 1764456022,
+      "type": "DEPOSIT",
+      "usdc_size": 1627.945819
+    },
+    {
+      "proxy_wallet": "0x0000000000000000000000000000000000000001",
+      "timestamp": 1764879009,
+      "type": "WITHDRAWAL",
+      "usdc_size": 1470.0
+    },
+    {
+      "proxy_wallet": "0x0000000000000000000000000000000000000001",
+      "timestamp": 1764997255,
+      "type": "WITHDRAWAL",
+      "usdc_size": 600.0
+    },
+    {
+      "proxy_wallet": "0x0000000000000000000000000000000000000001",
+      "timestamp": 1766187117,
+      "type": "WITHDRAWAL",
+      "usdc_size": 760.0
+    },
+    {
+      "proxy_wallet": "0x0000000000000000000000000000000000000001",
+      "timestamp": 1766303981,
+      "type": "WITHDRAWAL",
+      "usdc_size": 760.0
+    },
+    {
+      "proxy_wallet": "0x0000000000000000000000000000000000000001",
+      "timestamp": 1766359180,
+      "type": "DEPOSIT",
+      "usdc_size": 99993.758157
+    },
+    {
+      "proxy_wallet": "0x0000000000000000000000000000000000000001",
+      "timestamp": 1766359370,
+      "type": "DEPOSIT",
+      "usdc_size": 99993.686832
+    },
+    {
+      "proxy_wallet": "0x0000000000000000000000000000000000000001",
+      "timestamp": 1766862315,
+      "type": "DEPOSIT",
+      "usdc_size": 98991.694286
+    },
+    {
+      "proxy_wallet": "0x0000000000000000000000000000000000000001",
+      "timestamp": 1766862503,
+      "type": "DEPOSIT",
+      "usdc_size": 95990.3191
+    },
+    {
+      "proxy_wallet": "0x0000000000000000000000000000000000000001",
+      "timestamp": 1766862643,
+      "type": "DEPOSIT",
+      "usdc_size": 534.000003
+    },
+    {
+      "proxy_wallet": "0x0000000000000000000000000000000000000001",
+      "timestamp": 1768277909,
+      "type": "WITHDRAWAL",
+      "usdc_size": 1801.0
+    },
+    {
+      "proxy_wallet": "0x0000000000000000000000000000000000000001",
+      "timestamp": 1768774028,
+      "type": "DEPOSIT",
+      "usdc_size": 1.0
+    },
+    {
+      "proxy_wallet": "0x0000000000000000000000000000000000000001",
+      "timestamp": 1769239134,
+      "type": "DEPOSIT",
+      "usdc_size": 97995.046277
+    },
+    {
+      "proxy_wallet": "0x0000000000000000000000000000000000000001",
+      "timestamp": 1769239396,
+      "type": "DEPOSIT",
+      "usdc_size": 1370.97844
+    },
+    {
+      "proxy_wallet": "0x0000000000000000000000000000000000000001",
+      "timestamp": 1769923420,
+      "type": "DEPOSIT",
+      "usdc_size": 98000.003354
+    },
+    {
+      "proxy_wallet": "0x0000000000000000000000000000000000000001",
+      "timestamp": 1769923576,
+      "type": "DEPOSIT",
+      "usdc_size": 1284.99998
+    },
+    {
+      "proxy_wallet": "0x0000000000000000000000000000000000000001",
+      "timestamp": 1769925948,
+      "type": "DEPOSIT",
+      "usdc_size": 98000.000883
+    },
+    {
+      "proxy_wallet": "0x0000000000000000000000000000000000000001",
+      "timestamp": 1769926082,
+      "type": "DEPOSIT",
+      "usdc_size": 1399.0
+    },
+    {
+      "proxy_wallet": "0x0000000000000000000000000000000000000001",
+      "timestamp": 1769929134,
+      "type": "DEPOSIT",
+      "usdc_size": 98000.001706
+    },
+    {
+      "proxy_wallet": "0x0000000000000000000000000000000000000001",
+      "timestamp": 1769929286,
+      "type": "DEPOSIT",
+      "usdc_size": 1398.999959
+    },
+    {
+      "proxy_wallet": "0x0000000000000000000000000000000000000001",
+      "timestamp": 1770007968,
+      "type": "DEPOSIT",
+      "usdc_size": 97999.9985
+    },
+    {
+      "proxy_wallet": "0x0000000000000000000000000000000000000001",
+      "timestamp": 1770008086,
+      "type": "DEPOSIT",
+      "usdc_size": 1400.000015
+    },
+    {
+      "proxy_wallet": "0x0000000000000000000000000000000000000001",
+      "timestamp": 1770520287,
+      "type": "DEPOSIT",
+      "usdc_size": 97000.000175
+    },
+    {
+      "proxy_wallet": "0x0000000000000000000000000000000000000001",
+      "timestamp": 1770520677,
+      "type": "DEPOSIT",
+      "usdc_size": 574.999999
+    },
+    {
+      "proxy_wallet": "0x0000000000000000000000000000000000000001",
+      "timestamp": 1770535291,
+      "type": "DEPOSIT",
+      "usdc_size": 97000.000962
+    },
+    {
+      "proxy_wallet": "0x0000000000000000000000000000000000000001",
+      "timestamp": 1770535455,
+      "type": "DEPOSIT",
+      "usdc_size": 610.000029
+    },
+    {
+      "proxy_wallet": "0x0000000000000000000000000000000000000001",
+      "timestamp": 1770864297,
+      "type": "WITHDRAWAL",
+      "usdc_size": 1200.0
+    },
+    {
+      "proxy_wallet": "0x0000000000000000000000000000000000000001",
+      "timestamp": 1771135767,
+      "type": "WITHDRAWAL",
+      "usdc_size": 1900.0
+    },
+    {
+      "proxy_wallet": "0x0000000000000000000000000000000000000001",
+      "timestamp": 1772091168,
+      "type": "WITHDRAWAL",
+      "usdc_size": 1610.0
+    },
+    {
+      "proxy_wallet": "0x0000000000000000000000000000000000000001",
+      "timestamp": 1772765293,
+      "type": "WITHDRAWAL",
+      "usdc_size": 2380.0
+    },
+    {
+      "proxy_wallet": "0x0000000000000000000000000000000000000001",
+      "timestamp": 1772923835,
+      "type": "WITHDRAWAL",
+      "usdc_size": 1030.0
+    },
+    {
+      "proxy_wallet": "0x0000000000000000000000000000000000000001",
+      "timestamp": 1773530217,
+      "type": "DEPOSIT",
+      "usdc_size": 98999.998872
+    },
+    {
+      "proxy_wallet": "0x0000000000000000000000000000000000000001",
+      "timestamp": 1773530399,
+      "type": "DEPOSIT",
+      "usdc_size": 98999.998783
+    },
+    {
+      "proxy_wallet": "0x0000000000000000000000000000000000000001",
+      "timestamp": 1773530559,
+      "type": "DEPOSIT",
+      "usdc_size": 957.999979
+    },
+    {
+      "proxy_wallet": "0x0000000000000000000000000000000000000001",
+      "timestamp": 1773699949,
+      "type": "WITHDRAWAL",
+      "usdc_size": 920.0
+    },
+    {
+      "proxy_wallet": "0x0000000000000000000000000000000000000001",
+      "timestamp": 1773876795,
+      "type": "DEPOSIT",
+      "usdc_size": 97999.999999
+    },
+    {
+      "proxy_wallet": "0x0000000000000000000000000000000000000001",
+      "timestamp": 1773876959,
+      "type": "DEPOSIT",
+      "usdc_size": 1389.0
+    },
+    {
+      "proxy_wallet": "0x0000000000000000000000000000000000000001",
+      "timestamp": 1773963559,
+      "type": "WITHDRAWAL",
+      "usdc_size": 1850.0
+    },
+    {
+      "proxy_wallet": "0x0000000000000000000000000000000000000001",
+      "timestamp": 1774756530,
+      "type": "WITHDRAWAL",
+      "usdc_size": 1435.0
+    },
+    {
+      "proxy_wallet": "0x0000000000000000000000000000000000000001",
+      "timestamp": 1774844024,
+      "type": "WITHDRAWAL",
+      "usdc_size": 1809.999999
+    },
+    {
+      "proxy_wallet": "0x0000000000000000000000000000000000000001",
+      "timestamp": 1776398826,
+      "type": "WITHDRAWAL",
+      "usdc_size": 1830.0
+    },
+    {
+      "proxy_wallet": "0x0000000000000000000000000000000000000001",
+      "timestamp": 1776581210,
+      "type": "WITHDRAWAL",
+      "usdc_size": 389.0
+    },
+    {
+      "proxy_wallet": "0x0000000000000000000000000000000000000001",
+      "timestamp": 1777176696,
+      "type": "WITHDRAWAL",
+      "usdc_size": 1809.999999
+    },
+    {
+      "proxy_wallet": "0x0000000000000000000000000000000000000001",
+      "timestamp": 1777649132,
+      "type": "WITHDRAWAL",
+      "usdc_size": 1780.0
+    },
+    {
+      "proxy_wallet": "0x0000000000000000000000000000000000000001",
+      "timestamp": 1778212058,
+      "type": "WITHDRAWAL",
+      "usdc_size": 1770.0
+    },
+    {
+      "proxy_wallet": "0x0000000000000000000000000000000000000001",
+      "timestamp": 1778472589,
+      "type": "WITHDRAWAL",
+      "usdc_size": 1250.0
+    },
+    {
+      "proxy_wallet": "0x0000000000000000000000000000000000000001",
+      "timestamp": 1779382870,
+      "type": "WITHDRAWAL",
+      "usdc_size": 1294.0
+    },
+    {
+      "proxy_wallet": "0x0000000000000000000000000000000000000001",
+      "timestamp": 1779997739,
+      "type": "DEPOSIT",
+      "usdc_size": 90000.0
+    },
+    {
+      "proxy_wallet": "0x0000000000000000000000000000000000000001",
+      "timestamp": 1779998070,
+      "type": "DEPOSIT",
+      "usdc_size": 90000.0
+    },
+    {
+      "proxy_wallet": "0x0000000000000000000000000000000000000001",
+      "timestamp": 1779998444,
+      "type": "DEPOSIT",
+      "usdc_size": 17993.0
+    },
+    {
+      "proxy_wallet": "0x0000000000000000000000000000000000000001",
+      "timestamp": 1780028789,
+      "type": "WITHDRAWAL",
+      "usdc_size": 1155.0
+    },
+    {
+      "proxy_wallet": "0x0000000000000000000000000000000000000001",
+      "timestamp": 1780372466,
+      "type": "WITHDRAWAL",
+      "usdc_size": 765.0
+    },
+    {
+      "proxy_wallet": "0x0000000000000000000000000000000000000001",
+      "timestamp": 1780625784,
+      "type": "WITHDRAWAL",
+      "usdc_size": 5000.0
+    },
+    {
+      "proxy_wallet": "0x0000000000000000000000000000000000000001",
+      "timestamp": 1780628044,
+      "type": "WITHDRAWAL",
+      "usdc_size": 4999.0
+    },
+    {
+      "proxy_wallet": "0x0000000000000000000000000000000000000001",
+      "timestamp": 1780630464,
+      "type": "WITHDRAWAL",
+      "usdc_size": 5000.0
+    },
+    {
+      "proxy_wallet": "0x0000000000000000000000000000000000000001",
+      "timestamp": 1781301811,
+      "type": "WITHDRAWAL",
+      "usdc_size": 1140.0
+    },
+    {
+      "proxy_wallet": "0x0000000000000000000000000000000000000001",
+      "timestamp": 1781385661,
+      "type": "WITHDRAWAL",
+      "usdc_size": 1140.0
+    },
+    {
+      "proxy_wallet": "0x0000000000000000000000000000000000000001",
+      "timestamp": 1781633306,
+      "type": "WITHDRAWAL",
+      "usdc_size": 1365.0
+    },
+    {
+      "proxy_wallet": "0x0000000000000000000000000000000000000001",
+      "timestamp": 1781885776,
+      "type": "WITHDRAWAL",
+      "usdc_size": 5000.0
+    },
+    {
+      "proxy_wallet": "0x0000000000000000000000000000000000000001",
+      "timestamp": 1781887463,
+      "type": "WITHDRAWAL",
+      "usdc_size": 5000.0
+    },
+    {
+      "proxy_wallet": "0x0000000000000000000000000000000000000001",
+      "timestamp": 1781888338,
+      "type": "WITHDRAWAL",
+      "usdc_size": 5000.0
+    },
+    {
+      "proxy_wallet": "0x0000000000000000000000000000000000000001",
+      "timestamp": 1782509116,
+      "type": "WITHDRAWAL",
+      "usdc_size": 1120.0
+    },
+    {
+      "proxy_wallet": "0x0000000000000000000000000000000000000001",
+      "timestamp": 1782596467,
+      "type": "WITHDRAWAL",
+      "usdc_size": 5000.0
+    },
+    {
+      "proxy_wallet": "0x0000000000000000000000000000000000000001",
+      "timestamp": 1783034524,
+      "type": "WITHDRAWAL",
+      "usdc_size": 965.0
+    },
+    {
+      "proxy_wallet": "0x0000000000000000000000000000000000000001",
+      "timestamp": 1784251340,
+      "type": "WITHDRAWAL",
+      "usdc_size": 1010.0
+    },
+    {
+      "proxy_wallet": "0x0000000000000000000000000000000000000001",
+      "timestamp": 1784487489,
+      "type": "WITHDRAWAL",
+      "usdc_size": 1200.0
+    },
+    {
+      "proxy_wallet": "0x0000000000000000000000000000000000000001",
+      "timestamp": 1784576980,
+      "type": "DEPOSIT",
+      "usdc_size": 98000.0
+    },
+    {
+      "proxy_wallet": "0x0000000000000000000000000000000000000001",
+      "timestamp": 1784577124,
+      "type": "DEPOSIT",
+      "usdc_size": 1419.0
+    },
+    {
+      "proxy_wallet": "0x0000000000000000000000000000000000000001",
+      "timestamp": 1784650404,
+      "type": "DEPOSIT",
+      "usdc_size": 98000.0
+    },
+    {
+      "proxy_wallet": "0x0000000000000000000000000000000000000001",
+      "timestamp": 1784650515,
+      "type": "DEPOSIT",
+      "usdc_size": 1450.0
+    },
+    {
+      "proxy_wallet": "0x0000000000000000000000000000000000000001",
+      "timestamp": 1784669932,
+      "type": "WITHDRAWAL",
+      "usdc_size": 5000.0
+    },
+    {
+      "proxy_wallet": "0x0000000000000000000000000000000000000001",
+      "timestamp": 1784670856,
+      "type": "WITHDRAWAL",
+      "usdc_size": 5000.0
+    },
+    {
+      "proxy_wallet": "0x0000000000000000000000000000000000000001",
+      "timestamp": 1784739694,
+      "type": "DEPOSIT",
+      "usdc_size": 98000.0
+    },
+    {
+      "proxy_wallet": "0x0000000000000000000000000000000000000001",
+      "timestamp": 1784739753,
+      "type": "DEPOSIT",
+      "usdc_size": 1449.0
+    },
+    {
+      "proxy_wallet": "0x0000000000000000000000000000000000000001",
+      "timestamp": 1784757663,
+      "type": "WITHDRAWAL",
+      "usdc_size": 10645.0
+    },
+    {
+      "proxy_wallet": "0x0000000000000000000000000000000000000001",
+      "timestamp": 1784853522,
+      "type": "WITHDRAWAL",
+      "usdc_size": 830.0
+    },
+    {
+      "proxy_wallet": "0x0000000000000000000000000000000000000001",
+      "timestamp": 1786595068,
+      "type": "WITHDRAWAL",
+      "usdc_size": 765.0
+    },
+    {
+      "proxy_wallet": "0x0000000000000000000000000000000000000001",
+      "timestamp": 1786938660,
+      "type": "WITHDRAWAL",
+      "usdc_size": 1145.0
+    },
+    {
+      "proxy_wallet": "0x0000000000000000000000000000000000000001",
+      "timestamp": 1787216476,
+      "type": "WITHDRAWAL",
+      "usdc_size": 5020.0
+    },
+    {
+      "proxy_wallet": "0x0000000000000000000000000000000000000001",
+      "timestamp": 1790050141,
+      "type": "WITHDRAWAL",
+      "usdc_size": 375.0
+    },
+    {
+      "proxy_wallet": "0x0000000000000000000000000000000000000001",
+      "timestamp": 1790137250,
+      "type": "WITHDRAWAL",
+      "usdc_size": 373.0
+    },
+    {
+      "proxy_wallet": "0x0000000000000000000000000000000000000001",
+      "timestamp": 1791428761,
+      "type": "WITHDRAWAL",
+      "usdc_size": 670.0
+    },
+    {
+      "proxy_wallet": "0x0000000000000000000000000000000000000001",
+      "timestamp": 1791586396,
+      "type": "WITHDRAWAL",
+      "usdc_size": 1120.0
+    },
+    {
+      "proxy_wallet": "0x0000000000000000000000000000000000000001",
+      "timestamp": 1791940800,
+      "type": "WITHDRAWAL",
+      "usdc_size": 1125.0
+    },
+    {
+      "proxy_wallet": "0x0000000000000000000000000000000000000001",
+      "timestamp": 1792025842,
+      "type": "WITHDRAWAL",
+      "usdc_size": 1110.0
+    }
+  ],
+  "snapshot": {
+    "cashBalance": "3166930.571353",
+    "positionsValue": "254679.366970",
+    "equity": "3421609.938323",
+    "valuationTime": "2026-10-15T10:09:33Z"
+  }
+}

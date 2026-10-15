@@ -31,6 +31,15 @@ export const fresh = (at: number, ttl = 30_000) =>
 export type Venue = "perps" | "prediction";
 export interface Candidate {
   metric_window?: { start_at: number; end_at: number; basis: string };
+  metric_provenance?: {
+    source: string;
+    sampling: "daily";
+    estimated: boolean;
+    cashflow_adjusted: boolean;
+    flow_timing: string;
+    reconciliation_difference_pct: number;
+  };
+  metric_unavailable_reason?: string;
   id: string;
   handle: string;
   market: Venue;
