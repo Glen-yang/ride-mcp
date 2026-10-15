@@ -235,7 +235,9 @@ export class PredictionVenue {
   }
   async profile(id: string): Promise<Candidate> {
     const row = await this.resolve(id);
-    const source = await this.source(id);
+    // Discovery uses the independently refreshed score snapshot. Live inventory
+    // and collateral are validated by source() when planning/executing exposure;
+    // requiring them here hides otherwise valid candidates on an RPC outage.
     const components = Object.fromEntries(
       Object.entries(row.components ?? {}).map(([k, v]) => [
         k,

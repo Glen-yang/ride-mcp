@@ -13,6 +13,44 @@ const identity = {
   wrapped_collateral: "0x0000000000000000000000000000000000000011",
   conditional_tokens: "0x0000000000000000000000000000000000000012",
 };
+it("browses fresh Prediction scores without requiring live positions or collateral RPC", async () => {
+  const operations: string[] = [];
+  const scoredAt = now() - 3600000;
+  const venue = new PredictionVenue(
+    { query: async () => assert.fail("Discovery must not write outcome metadata") } as any,
+    async (operation) => {
+      operations.push(operation);
+      assert.equal(operation, "prediction_pool");
+      return [{
+        address: wallet,
+        handle: "Prediction specialist",
+        score: "88.5",
+        score_version: "prediction_curated_pool_v1",
+        components: { winRate: "90", pnl: "85", trades: null },
+        computed_at: scoredAt,
+        expires_at: scoredAt + 36 * 3600000,
+        assets: ["Sports", "Politics"],
+      }];
+    },
+    "stable-test-salt",
+  );
+  // The source reader must remain a separate, fail-closed execution check.
+  (venue as any).source = async () => assert.fail("Discovery must not read live source inventory");
+  const candidates = await venue.candidates();
+  assert.equal(candidates.length, 1);
+  const profile = candidates[0];
+  assert.equal(profile.market, "prediction");
+  assert.equal(profile.handle, "Prediction specialist");
+  assert.equal(profile.score, 88.5);
+  assert.equal(profile.score_version, "prediction_curated_pool_v1");
+  assert.equal(profile.scored_at, scoredAt);
+  assert.deepEqual(profile.assets, ["SPORTS", "POLITICS"]);
+  assert.equal(profile.components.trades, null);
+  assert.equal(profile.source_roi_pct, null);
+  assert.equal(profile.source_drawdown_pct, null);
+  assert.equal(profile.eligibility, "PASS");
+  assert(operations.every((op) => op === "prediction_pool"));
+});
 const abi = new Interface([
   "event Transfer(address indexed from,address indexed to,uint256 value)",
   "event TransferSingle(address indexed operator,address indexed from,address indexed to,uint256 id,uint256 value)",
