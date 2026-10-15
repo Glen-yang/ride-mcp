@@ -208,6 +208,11 @@ app.get("/favicon.ico", (_req, res) => res.sendStatus(204));
 app.get("/cards", async (_req, res) =>
   res.type("html").send(await readFile("public/agent.html", "utf8")),
 );
+app.get("/conversation", async (_req, res) =>
+  res
+    .type("html")
+    .send(await readFile("scripts/conversation-demo.html", "utf8")),
+);
 app.get("/preview", (_req, res) =>
   res.type("html")
     .send(`<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><title>Ride V18 functional preview</title>

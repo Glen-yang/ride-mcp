@@ -78,7 +78,25 @@ export const inputs = {
       preferences: preferenceAnswers.optional(),
       batch_action: z.enum(["first", "next", "saved"]).optional(),
       batch_index: z.number().int().min(0).max(1).optional(),
-      trader_ids: z.array(id).min(1).max(8).optional(),
+      trader_ids: z
+        .array(id)
+        .min(1)
+        .max(8)
+        .refine(
+          (v) => new Set(v).size === v.length,
+          "Select each trader only once",
+        )
+        .optional(),
+      selection: z.enum(["system"]).optional(),
+    })
+    .strict(),
+  browse_traders: z
+    .object({
+      sort_by: z.enum(["score", "drawdown", "roi"]).default("score"),
+      direction: z.enum(["asc", "desc"]).optional(),
+      limit: z.number().int().min(1).max(20).default(5),
+      cursor: z.string().max(1024).optional(),
+      compare_ids: z.array(id).min(1).max(8).optional(),
     })
     .strict(),
   get_trader_profile: z
@@ -96,15 +114,15 @@ export const inputs = {
   recalculate_plan: z
     .object({
       plan_id: id,
-      preferences: preferences.optional(),
+      preferences: preferenceAnswers.optional(),
       allocations: z
         .array(
           z
             .object({
               trader_id: id,
               amount_usdc: positiveMoney,
-              leverage_cap: z.number().int().min(1).max(8),
-              stop_loss_pct: z.number().min(1).max(100).default(30),
+              leverage_cap: z.number().int().min(1).max(8).optional(),
+              stop_loss_pct: z.number().min(1).max(100).optional(),
               ...copySettings,
             })
             .strict(),
@@ -113,14 +131,7 @@ export const inputs = {
         .max(8)
         .optional(),
     })
-    .strict()
-    .refine(
-      (v) =>
-        !v.allocations ||
-        (v.allocations.length >= 3 && v.allocations.length <= 6) ||
-        !!v.preferences?.portfolio_kind,
-      "Use explicit single/basket preferences for the new basket sizes.",
-    ),
+    .strict(),
   get_performance: z
     .object({
       portfolio_id: id.optional(),

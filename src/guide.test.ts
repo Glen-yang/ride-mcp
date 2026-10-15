@@ -68,7 +68,7 @@ it("an unchanged running stdio MCP reads a newly deployed workflow without setup
     try {
       await client.connect(transport);
       assert.equal(client.getInstructions(), GUIDE_INSTRUCTIONS);
-      assert.equal((await client.listTools()).tools.length, 24);
+      assert.equal((await client.listTools()).tools.length, 25);
       const first = await client.callTool({
         name: "get_ride_guide",
         arguments: {},

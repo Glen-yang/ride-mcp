@@ -1,0 +1,341 @@
+<!doctype html>
+<html lang="zh-CN">
+  <meta charset="utf-8" /><meta
+    name="viewport"
+    content="width=device-width,initial-scale=1"
+  /><title>Ride 对话流程验收</title>
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+    body {
+      margin: 0;
+      background: #f7f8fa;
+      color: #17232e;
+      font:
+        15px/1.65 system-ui,
+        sans-serif;
+    }
+    main {
+      max-width: 980px;
+      margin: 32px auto;
+      padding: 0 24px;
+    }
+    header {
+      border-bottom: 1px solid #dce2e7;
+      margin-bottom: 22px;
+      padding-bottom: 18px;
+    }
+    h1 {
+      font-size: 25px;
+      margin: 0;
+    }
+    small,
+    .muted {
+      color: #637280;
+    }
+    button {
+      border: 1px solid #cad5de;
+      border-radius: 9px;
+      background: white;
+      color: #243a4a;
+      padding: 9px 13px;
+      cursor: pointer;
+    }
+    button:hover {
+      background: #edf4f7;
+    }
+    nav {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 14px;
+    }
+    article {
+      background: white;
+      border: 1px solid #dce2e7;
+      border-radius: 14px;
+      padding: 18px 22px;
+      margin: 14px 0;
+    }
+    .user {
+      margin-left: 22%;
+      background: #eef4f8;
+    }
+    .role {
+      font-size: 12px;
+      color: #75838e;
+      margin-bottom: 6px;
+    }
+    p {
+      margin: 6px 0 12px;
+    }
+    h2 {
+      font-size: 17px;
+      margin: 16px 0 8px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+    td,
+    th {
+      text-align: left;
+      border-bottom: 1px solid #e5e9ed;
+      padding: 8px;
+      vertical-align: top;
+    }
+    th {
+      background: #f7f9fa;
+    }
+    code {
+      font-size: 10px;
+      color: #637280;
+      word-break: break-all;
+    }
+    #error {
+      color: #b42318;
+    }
+  </style>
+  <main>
+    <header>
+      <h1>Ride · 对话引导式跟单</h1>
+      <small
+        >本地脚本化客户端验收 · 模拟 AI 结构化调用，连接真实本地后端 ·
+        模拟账户与行情，不下单</small
+      >
+      <nav>
+        <button id="budget">投入 200 USDC</button
+        ><button id="risk">平衡型</button><button id="more">再看 10 位</button
+        ><button id="sort">按回撤排序</button
+        ><button id="compare">比较前两位</button
+        ><button id="select">只跟前两位</button
+        ><button id="single">只跟第一位</button
+        ><button id="account">查看资金</button>
+      </nav>
+    </header>
+    <div id="chat"></div>
+    <p id="error"></p>
+  </main>
+  <script>
+    const chat = document.querySelector("#chat");
+    let current,
+      firstCandidates = [],
+      cursor,
+      browseQuery = { sort_by: "score" },
+      hasMore = true;
+    const node = (tag, text) => {
+      const e = document.createElement(tag);
+      if (text != null) e.textContent = String(text);
+      return e;
+    };
+    const message = (role, text) => {
+      const a = node("article");
+      if (role === "你") a.className = "user";
+      a.append(node("div", role));
+      a.firstChild.className = "role";
+      if (text) a.append(node("p", text));
+      chat.append(a);
+      return a;
+    };
+    const call = async (name, args = {}) => {
+      const r = await fetch("/agent/v1/" + name, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: "Bearer local-fixture",
+        },
+        body: JSON.stringify(args),
+      });
+      const v = await r.json();
+      if (!r.ok && !v.data) throw Error(v.error?.message || "请求失败");
+      return v;
+    };
+    function table(parent, headers, rows) {
+      const t = node("table"),
+        head = node("tr");
+      for (const h of headers) head.append(node("th", h));
+      t.append(head);
+      for (const row of rows) {
+        const tr = node("tr");
+        for (const v of row) tr.append(node("td", v == null ? "暂无数据" : v));
+        t.append(tr);
+      }
+      parent.append(t);
+    }
+    function show(v) {
+      const d = v.data || {},
+        a = message("Ride");
+      if (d.preference_collection && !d.preference_collection.ready) {
+        a.append(
+          node(
+            "p",
+            d.preference_collection.questions.map((q) => q.question).join(" "),
+          ),
+        );
+        return;
+      }
+      if (d.recommended_portfolio) {
+        current = d;
+        firstCandidates = d.candidates;
+        cursor = d.candidate_page?.next_cursor;
+        browseQuery = { sort_by: "score" };
+        hasMore = d.candidate_page?.has_more ?? d.candidates.length > 5;
+        a.append(
+          node(
+            "p",
+            "根据你的预算和风险偏好，推荐以下组合。你可以采用，也可以自由选人。",
+          ),
+        );
+        a.append(
+          node(
+            "p",
+            `默认资产不限，Crypto／RWA 均可；允许 Perps 和 Prediction，本次结果来自 ${(d.market_coverage?.selected || []).join("、")}。`,
+          ),
+        );
+        a.append(node("h2", "推荐组合"));
+        table(
+          a,
+          ["交易员", "分配 USDC", "推荐理由"],
+          d.recommended_portfolio.map((x) => [
+            x.nickname,
+            x.amount_usdc,
+            `评分 ${x.score} · ${x.style} · ${x.assets.join("/")}`,
+          ]),
+        );
+        a.append(node("h2", "可选交易员"));
+        showCandidates(a, d.candidate_table);
+        a.append(
+          node(
+            "p",
+            `共 ${d.candidates_meta?.total ?? d.candidates.length} 位候选，先展示 5 位。可查看更多、排序、比较或自选 1–8 位。`,
+          ),
+        );
+        a.append(
+          node(
+            "p",
+            `建议组合亏损退出触发值 ${d.preferences.loss_trigger_pct}%（可修改，非最大亏损保证）；模式 Ride 推荐，各人杠杆上限与退出规则在最终方案中审阅。推荐不构成交易授权。`,
+          ),
+        );
+        if (v.error) a.append(node("p", v.error.message));
+        return;
+      }
+      if (d.candidate_table) {
+        a.append(
+          node(
+            "p",
+            d.comparison
+              ? "交易员比较（未知历史区间不可视为同口径）"
+              : "候选列表 · 方案与已选项保持不变",
+          ),
+        );
+        showCandidates(a, d.candidate_table);
+        if (!d.comparison) {
+          cursor = d.candidates_meta.next_cursor;
+          hasMore = d.candidates_meta.has_more;
+        }
+        a.append(
+          node(
+            "p",
+            `本页 ${d.candidates_meta.returned} 位／共 ${d.candidates_meta.total} 位；${d.candidates_meta.has_more ? "还有更多" : "已到当前来源池边界"}。`,
+          ),
+        );
+        return;
+      }
+      if (d.account_balances) {
+        const b = d.account_balances;
+        a.append(
+          node("p", "分市场资金口径：账户可用余额与跟单内部剩余额度分别展示。"),
+        );
+        table(
+          a,
+          ["市场", "账户总值 USD", "可用交易 USDC", "占用／预留"],
+          Object.entries(b.markets).map(([k, x]) => [
+            k,
+            x.account_value_usd,
+            x.available_trading_usdc,
+            x.occupied_or_reserved_usdc,
+          ]),
+        );
+        return;
+      }
+      a.append(node("p", JSON.stringify(d)));
+    }
+    function showCandidates(a, rows) {
+      table(
+        a,
+        ["交易员／公开 ID", "评分", "资产／特点", "历史收益／回撤"],
+        rows.map((x) => [
+          x.nickname + " · " + x.trader_id,
+          x.score,
+          x.assets.join("/") + " · " + x.style,
+          `${x.historical_roi_pct ?? "暂无"}% / ${x.historical_drawdown_pct ?? "暂无"}%（区间暂无）`,
+        ]),
+      );
+    }
+    const action = (id, text, fn) =>
+      (document.querySelector("#" + id).onclick = async () => {
+        message("你", text);
+        document.querySelector("#error").textContent = "";
+        try {
+          await fn();
+        } catch (e) {
+          document.querySelector("#error").textContent = e.message;
+        }
+      });
+    action("budget", "投入 200 USDC", async () =>
+      show(await call("set_preferences", { budget_usdc: "200" })),
+    );
+    action("risk", "平衡型", async () => {
+      await call("set_preferences", { risk_tolerance: "medium" });
+      show(await call("recommend_traders"));
+    });
+    action("more", "再看 10 位", async () => {
+      if (!hasMore) {
+        message("Ride", "已经展示到当前来源池边界，可调整筛选或刷新候选。");
+        return;
+      }
+      if (!cursor) {
+        const first = await call("browse_traders", browseQuery);
+        cursor = first.data.candidates_meta.next_cursor;
+      }
+      show(
+        await call("browse_traders", {
+          ...browseQuery,
+          limit: 10,
+          ...(cursor ? { cursor } : {}),
+        }),
+      );
+    });
+    action("sort", "按历史回撤从低到高排序", async () => {
+      browseQuery = { sort_by: "drawdown" };
+      show(await call("browse_traders", browseQuery));
+    });
+    action("compare", "比较前两位", async () =>
+      show(
+        await call("browse_traders", {
+          compare_ids: firstCandidates.slice(0, 2).map((x) => x.id),
+        }),
+      ),
+    );
+    action("select", "只跟前两位", async () =>
+      show(
+        await call("recommend_traders", {
+          trader_ids: firstCandidates.slice(0, 2).map((x) => x.id),
+        }),
+      ),
+    );
+    action("single", "只跟第一位", async () =>
+      show(
+        await call("recommend_traders", {
+          trader_ids: firstCandidates.slice(0, 1).map((x) => x.id),
+        }),
+      ),
+    );
+    action("account", "查看完整资金", async () =>
+      show(await call("get_portfolio")),
+    );
+    message("Ride", "你计划投入多少 USDC？风险偏好是稳健、平衡，还是进取？");
+  </script>
+</html>

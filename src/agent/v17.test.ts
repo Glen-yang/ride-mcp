@@ -37,7 +37,7 @@ function env() {
   return { repo, adapter, api };
 }
 it("single and 2–8 trader plans require explicit new preferences; legacy plans retain their limits", async () => {
-  const { api, adapter } = env();
+  const { api, adapter, repo } = env();
   const one = (
     await api.tool("alice", "recommend_traders", {
       preferences: { ...pref, portfolio_kind: "single", basket_size: 1 },
@@ -52,9 +52,10 @@ it("single and 2–8 trader plans require explicit new preferences; legacy plans
     })
   ).data.plan as any;
   assert.equal(eight.allocations.length, 8);
-  const original = (
-    await api.tool("old", "recommend_traders", { preferences: legacy })
-  ).data.plan as any;
+  const original = recommend(legacy, adapter.pool);
+  await repo.transact("old", async (s) => {
+    s.plans.push(original);
+  });
   assert.equal(original.allocations.length, 6);
   await assert.rejects(
     api.tool("old", "recalculate_plan", {
@@ -72,7 +73,7 @@ it("single and 2–8 trader plans require explicit new preferences; legacy plans
   const low = recommend({ ...pref, risk_tolerance: "low" }, adapter.pool);
   assert.ok(low.allocations.every((a) => a.leverage_cap <= 3));
 });
-it("saved batches preserve edited basket and quota across preference edits and isolate accounts", async () => {
+it("legacy page inputs preserve edited plans without one-free-change limits and isolate accounts", async () => {
   const { api, adapter, repo } = env();
   const first = await api.tool("alice", "recommend_traders", {
       preferences: pref,
@@ -102,24 +103,22 @@ it("saved batches preserve edited basket and quota across preference edits and i
     (next.data.plan as any).allocations[0].amount_usdc,
     "100.000000",
   );
-  await assert.rejects(
-    api.tool("alice", "recommend_traders", {
-      preferences: pref,
-      batch_action: "next",
-    }),
-    /one free/,
+  const third = await api.tool("alice", "recommend_traders", {
+    preferences: pref,
+    batch_action: "next",
+  });
+  assert.equal(
+    (third.data.recommendation_batches as any).displayed_candidates.length,
+    8,
   );
   await api.tool("alice", "recommend_traders", {
     preferences: { ...pref, risk_tolerance: "high" },
     batch_action: "first",
   });
-  await assert.rejects(
-    api.tool("alice", "recommend_traders", {
-      preferences: { ...pref, risk_tolerance: "high" },
-      batch_action: "next",
-    }),
-    /one free/,
-  );
+  await api.tool("alice", "recommend_traders", {
+    preferences: { ...pref, risk_tolerance: "high" },
+    batch_action: "next",
+  });
   const bob = await api.tool("bob", "recommend_traders", {
     preferences: pref,
     batch_action: "first",
@@ -127,7 +126,7 @@ it("saved batches preserve edited basket and quota across preference edits and i
   assert.equal((bob.data.recommendation_batches as any).change_used, false);
   assert.equal(
     (bob.data.recommendation_batches as any).preview_quota_applies,
-    true,
+    false,
   );
   await repo.transact("alice", async (s) =>
     assert.equal(s.portfolios.length, 0),

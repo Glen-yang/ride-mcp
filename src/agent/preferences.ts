@@ -1,25 +1,21 @@
 import { preferences, type Preferences } from "./contracts.js";
 import type { State } from "./repository.js";
 
+// Product planning presets, not inferred user consent or guaranteed loss caps.
+export const suggestedLoss = { low: 10, medium: 20, high: 30 } as const;
 const questions = {
   budget_usdc: { question: "这次计划投入多少 USDC？", unit: "USDC" },
-  loss_trigger_pct: { question: "可接受的亏损触发比例是多少？", unit: "%" },
-  market: {
-    question: "想跟单哪个市场？",
-    options: ["perps", "prediction", "both"],
-  },
-  basket_size: {
-    question: "组合想选几位 trader？",
-    options: [2, 3, 4, 5, 6, 7, 8],
+  risk_tolerance: {
+    question: "风险偏好是稳健、平衡，还是进取？",
+    options: ["low", "medium", "high"],
   },
   fixed_margin_usdc: {
-    question: "每次新开仓使用多少 USDC 保证金？",
+    question: "你选择了固定保证金模式，每次新开仓使用多少 USDC？",
     unit: "USDC",
   },
 };
 
-// Old approved 'any' and RWA plans ignored the symbol fields. Canonicalize
-// those fields when editing a copy; never reinterpret a running old portfolio.
+// Never reinterpret an already approved legacy portfolio's asset semantics.
 export function normalizedAssetPreferences<T extends Partial<Preferences>>(
   value: T,
   version = 2,
@@ -33,7 +29,7 @@ export function preferenceCollection(
   s: State,
   answers: Partial<Preferences> = {},
 ) {
-  const previous =
+  const previous: Partial<Preferences> =
     s.preferences ??
     s.plans.at(-1)?.preferences ??
     s.portfolios.find((p) => p.state !== "closed")?.preferences ??
@@ -42,39 +38,93 @@ export function preferenceCollection(
     ? s.preference_asset_filter_version
     : (s.plans.at(-1)?.asset_filter_version ??
       s.portfolios.find((p) => p.state !== "closed")?.asset_filter_version);
-  const saved = {
+  const defaults = {
+    market: "both" as const,
     assets: [] as string[],
     allow_altcoins: true,
     asset_category: "any" as const,
+    copy_mode: "ride_recommends" as const,
+  };
+  const saved = {
+    ...defaults,
     ...normalizedAssetPreferences(previous, previousVersion ?? 1),
     ...(s.preference_draft ?? {}),
     ...answers,
   };
+  const sources: NonNullable<State["preference_sources"]> = {
+    market: "default",
+    assets: "default",
+    allow_altcoins: "default",
+    asset_category: "default",
+    copy_mode: "default",
+  };
+  // Existing explicit numeric risk settings remain explicit, including old plans.
+  for (const key of Object.keys(previous) as (keyof Preferences)[])
+    if (previous[key] != null) sources[key] = "user";
+  Object.assign(sources, s.preference_sources);
+  for (const key of Object.keys(answers) as (keyof Preferences)[])
+    if (answers[key] != null) sources[key] = "user";
+  if (
+    saved.risk_tolerance &&
+    (saved.loss_trigger_pct == null ||
+      sources.loss_trigger_pct === "recommended")
+  ) {
+    saved.loss_trigger_pct = suggestedLoss[saved.risk_tolerance];
+    sources.loss_trigger_pct = "recommended";
+  }
   const missing: (keyof typeof questions)[] = [];
-  for (const key of ["budget_usdc", "loss_trigger_pct", "market"] as const)
-    if (saved[key] == null) missing.push(key);
-  if (saved.portfolio_kind === "basket" && saved.basket_size == null)
-    missing.push("basket_size");
-  if (saved.copy_mode === "fixed" && saved.fixed_margin_usdc == null)
+  if (saved.budget_usdc == null) missing.push("budget_usdc");
+  // An existing user-supplied numerical loss constraint is a custom risk answer.
+  if (
+    !saved.risk_tolerance &&
+    !(saved.loss_trigger_pct != null && sources.loss_trigger_pct === "user")
+  )
+    missing.push("risk_tolerance");
+  if (
+    !missing.length &&
+    saved.copy_mode === "fixed" &&
+    saved.fixed_margin_usdc == null
+  )
     missing.push("fixed_margin_usdc");
   return {
     ready: missing.length === 0,
     answers: saved,
+    sources,
     missing_fields: missing,
     questions: missing.map((field) => ({ field, ...questions[field] })),
-    defaults: { assets: [], allow_altcoins: true, asset_category: "any" },
+    defaults,
+    suggestions:
+      sources.loss_trigger_pct === "recommended"
+        ? {
+            loss_trigger_pct: saved.loss_trigger_pct,
+            source: "Ride planning preset v1",
+            requires_final_confirmation: true,
+            explanation:
+              "建议的组合亏损退出触发值，可修改；是尽力执行的退出触发条件，不是最大亏损保证。",
+          }
+        : null,
     optional_choices: {
+      market: ["perps", "prediction", "both"],
       risk_tolerance: ["low", "medium", "high"],
-      portfolio_kind: ["single", "basket"],
       asset_category: ["crypto", "rwa", "any"],
       copy_mode: ["ride_recommends", "fixed", "proportional"],
     },
     instruction: missing.length
-      ? "Ask the user only these missing questions before recommending. Save partial answers; do not invent a budget or acceptable loss. Offer optional choices with clearly disclosed defaults."
-      : "Reuse these answers. Do not ask again after funding. Budget does not authorize a transfer or trade.",
+      ? "Ask only the returned missing questions in conversation. Save partial user answers. Do not open a full form, ask for trader count or funding, or invent budget or risk preference."
+      : "Recommend now. Disclose defaults and label numeric risk parameters as suggestions for final Ride confirmation. Preserve explicit choices; a budget or preview never authorizes funds or trades.",
   };
 }
-
+export function savePreferenceCollection(
+  s: State,
+  collection: ReturnType<typeof preferenceCollection>,
+): void {
+  s.preference_sources = collection.sources;
+  if (collection.ready) {
+    s.preferences = preferences.parse(collection.answers);
+    s.preference_asset_filter_version = 2;
+    s.preference_draft = undefined;
+  } else s.preference_draft = collection.answers;
+}
 export function completePreferences(
   s: State,
   answers: Partial<Preferences> = {},

@@ -1,6 +1,6 @@
 # Ride MCP · CLI · Skill
 
-Ride Agent V3 selects a diversified trader basket and manages owned Perps and prediction-market copies. It exposes twenty-two Agent MCP tools plus an authenticated Ride App copy read and a live workflow guide, equivalent JSON CLI commands, compact MCP App cards, and a portable agent Skill.
+Ride Agent V3 selects a diversified trader basket and manages owned Perps and prediction-market copies. It exposes twenty-three Agent MCP tools plus an authenticated Ride App copy read and a live workflow guide, equivalent JSON CLI commands, conversation-first recommendation tables and Ride confirmation cards, and a portable agent Skill.
 
 **Release status:** the hosted V3 endpoint is `https://mcp.onride.me/mcp`. Account readiness and Ride approval govern trading. The CLI and Skill are distributed as `@glenyang/ride-cli`; client installation targets the same production MCP endpoint.
 
@@ -54,10 +54,13 @@ The public, unauthenticated `ride guide --server URL` command reads the same wor
 
 ## Use
 
+The new conversation flow starts with budget and risk preference only, then shows a recommended portfolio and five candidate rows. Other settings are disclosed defaults/suggestions and remain editable. See [the 0.5.0 implementation and acceptance scope](docs/conversation-v050.md); production/npm availability is separate from this source revision.
+
 ```sh
 ride login --server https://mcp.onride.me/mcp --trade
-ride preferences --json '{"budget_usdc":"500","loss_trigger_pct":20,"market":"perps","assets":["BTC","ETH"]}'
+ride preferences --json '{"budget_usdc":"500","risk_tolerance":"medium"}'
 ride recommend --pretty
+ride traders --sort drawdown --limit 10 --pretty
 ride copy start PLAN_ID
 ride proposal PROPOSAL_ID
 ride confirm PROPOSAL_ID
@@ -73,6 +76,7 @@ Standalone `ride login` is separate from Codex native MCP login; Claude/Cursor s
 | MCP tool                       | CLI equivalent                                    |
 | ------------------------------ | ------------------------------------------------- |
 | `get_ride_guide`               | `ride guide [--server URL]`                       |
+| `browse_traders`               | `ride traders [--sort score/drawdown/roi]`        |
 | `get_preferences`              | `ride preferences`                                |
 | `set_preferences`              | `ride preferences --json ...`                     |
 | `get_deposit_options`          | `ride deposit options`                            |
@@ -159,6 +163,5 @@ MIT. The open repository is created from a clean history and contains no private
 Conversational features include single or 2–8 trader previews, fixed/proportional copying, separate risk preferences, saved recommendation batches, overlap review, deposit addresses/QR and status, daily check-ins and net-profit/account-value charts. Existing portfolios preserve their original limits and stop rules. See [V17 behavior and acceptance](docs/conversational-v17.md). Perps wallet receipt and venue funding remain distinct; RWA requires verified USDC collateral in Standard account scopes.
 
 Recommendation onboarding now returns missing preference questions and persists partial answers before fetching candidates. Perps funding continues from the owned receiving wallet through browser confirmation, optional Embedded Wallet signature, trading-account activation and verified trading balance. Prediction status verifies trading collateral separately from bridge completion. Old App routes and deployments remain independent.
-
 
 Widget/account repairs in 0.4.3 default asset preferences to unrestricted Crypto/RWA, keep candidates visible without a plan, and explain feasible trader counts without changing risk settings. `get_portfolio` separates per-market balances from copy allocations; missing modules remain unavailable. See [behavior, coverage and acceptance](docs/widget-account-v043.md).

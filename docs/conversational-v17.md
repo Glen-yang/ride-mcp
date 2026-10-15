@@ -1,5 +1,7 @@
 # Conversational V17 implementation · 0.4.0
 
+Historical release reference. Budget/risk-first onboarding and candidate browsing now follow [conversation-v050.md](conversation-v050.md); old upfront-field and batch-quota rules below are superseded.
+
 The supplied HTML is a simulated reference. Production uses the same exploration, preview, funding and review sequence inside the MCP card resource. The host owns the conversation sidebar/composer; Ride owns tool data and cards. The original reference file is preserved.
 
 ## Behavior

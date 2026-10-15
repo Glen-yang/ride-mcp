@@ -18,6 +18,10 @@ import { mcpLaunchArgs, PACKAGE_NAME, VERSION } from "../version.js";
 
 export type ClientName = "codex" | "claude-code" | "cursor";
 const legacySkillHashes = new Set([
+  // Complete unmodified released v0.4.1, v0.4.2 and v0.4.3 Skill trees.
+  "eb93a8803fb194e78a94507b37572df0f800c91fe82f0351041e0962c35f57d2",
+  "7121fe569d33be5eea9f600b96b31246b09962942883d0986642766ede89054c",
+  "51b095b73aed49b49f64f004e51ed2f3bf369d26dd3628a3fccf954e8322ee6e",
   // Unmodified v0.4.0 Skill tree.
   "fa661229246655abb153eccc5fea9862e53b6c02f18b9c3e12b9b962119c4272",
   // Unmodified v0.3.4 Skill tree.
@@ -45,6 +49,8 @@ const managedVersions = [
   "0.3.4",
   "0.4.0",
   "0.4.1",
+  "0.4.2",
+  "0.4.3",
   VERSION,
 ];
 

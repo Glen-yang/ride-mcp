@@ -1,3 +1,4 @@
+import { compatibility } from "../src/agent/conversational.js";
 // Functional acceptance: real MCP gateway + CLI + HTTP + PostgreSQL;
 // only authentication identity and exchange reads/fills are simulated.
 import assert from "node:assert/strict";
@@ -381,6 +382,13 @@ async function tool(c: Client, name: string, args: any = {}) {
   requests.push({ tool: name, args, result: value });
   return value;
 }
+// This acceptance client explicitly reviews the fixture overlap report. It never confirms real funds.
+function reviewStart(plan: any) {
+  return {
+    plan_id: plan.id,
+    compatibility_ack: compatibility(plan).fingerprint,
+  };
+}
 async function ok(c: Client, name: string, args: any = {}) {
   const v = await tool(c, name, args);
   assert.ok(!v.error, JSON.stringify(v.error));
@@ -410,6 +418,9 @@ const pref = {
   market: "perps",
   assets: ["BTC", "ETH"],
   allow_altcoins: false,
+  // Fixed six-person fixture keeps legacy execution/accounting scenarios comparable.
+  portfolio_kind: "basket" as const,
+  basket_size: 6,
 };
 try {
   await repo.migrate();
@@ -509,10 +520,10 @@ try {
     });
     assert.deepEqual(mcp.structuredContent, guide);
     assert.deepEqual(await cli(["guide", "--server", base + "/mcp"]), guide);
-    assert.equal((await alice.client.listTools()).tools.length, 24);
+    assert.equal((await alice.client.listTools()).tools.length, 25);
     assert(alice.client.getInstructions()?.includes("get_ride_guide"));
     assert.equal(guide.protocol, "ride-guide-v1");
-    return { release: guide.release, sha256: guide.sha256, tools: 24 };
+    return { release: guide.release, sha256: guide.sha256, tools: 25 };
   });
   await check("01 偏好：500 USDC / 20% / BTC ETH", async () => {
     const v = await ok(alice.client, "set_preferences", pref);
@@ -576,7 +587,7 @@ try {
     return { sameBackend: true };
   });
   await check("06 开始跟单：只生成提案，尚无仓位和订单", async () => {
-    const v = await ok(alice.client, "start_copy", { plan_id: plan.id });
+    const v = await ok(alice.client, "start_copy", reviewStart(plan));
     start = v.data.proposal;
     assert.equal(start.status, "requires_confirmation");
     assert.equal(
@@ -606,7 +617,20 @@ try {
   await check("08 人工确认后激活；部分成交与最终成交分开", async () => {
     await approve("alice", start);
     await runner.tick(users.alice);
-    assert.ok(venue.submits.length > 0);
+    assert.ok(
+      venue.submits.length > 0,
+      JSON.stringify(
+        await repo.transact(users.alice, async (s) => ({
+          updates: s.updates,
+          sleeves: s.portfolios[0]?.sleeves.map((x) => ({
+            trader: x.trader.id,
+            assets: x.trader.assets,
+            amount: x.amount_usdc,
+            initialized: x.initialized,
+          })),
+        })),
+      ),
+    );
     venue.fill(users.alice, 0.5);
     await runner.tick(users.alice);
     const partial = await ok(alice.client, "get_portfolio");
@@ -783,7 +807,7 @@ try {
     const plan = (await ok(c.client, "recommend_traders")).data.plan;
     await approve(
       "authority",
-      (await ok(c.client, "start_copy", { plan_id: plan.id })).data.proposal,
+      (await ok(c.client, "start_copy", reviewStart(plan))).data.proposal,
     );
     await settle("authority");
     const portfolio = (await ok(c.client, "get_portfolio")).data.portfolio;
@@ -835,8 +859,7 @@ try {
     unknownClient = c.client;
     await ok(c.client, "set_preferences", { ...pref, budget_usdc: "300" });
     const p = (await ok(c.client, "recommend_traders")).data.plan;
-    const q = (await ok(c.client, "start_copy", { plan_id: p.id })).data
-      .proposal;
+    const q = (await ok(c.client, "start_copy", reviewStart(p))).data.proposal;
     await approve("unknown", q);
     venue.loseResponse = true;
     await runner.tick(users.unknown);
@@ -859,7 +882,7 @@ try {
     const p = (await ok(c.client, "recommend_traders")).data.plan;
     await approve(
       "entry",
-      (await ok(c.client, "start_copy", { plan_id: p.id })).data.proposal,
+      (await ok(c.client, "start_copy", reviewStart(p))).data.proposal,
     );
     await runner.tick(users.entry);
     assert.equal(venue.submits.filter((s) => s.user === users.entry).length, 0);
@@ -881,7 +904,7 @@ try {
     const p = (await ok(c.client, "recommend_traders")).data.plan;
     await approve(
       "loss",
-      (await ok(c.client, "start_copy", { plan_id: p.id })).data.proposal,
+      (await ok(c.client, "start_copy", reviewStart(p))).data.proposal,
     );
     await settle("loss");
     venue.funding(users.loss, "perps:BTC", "-6");
@@ -932,7 +955,7 @@ try {
       assert.ok(plan.allocations.every((a: any) => a.stop_loss_pct === 30));
       await approve(
         "sleeveLoss",
-        (await ok(c.client, "start_copy", { plan_id: plan.id })).data.proposal,
+        (await ok(c.client, "start_copy", reviewStart(plan))).data.proposal,
       );
       await settle("sleeveLoss");
       venue.funding(users.sleeveLoss, "perps:BTC", "-30");
@@ -975,7 +998,7 @@ try {
       const plan = (await ok(c.client, "recommend_traders")).data.plan;
       await approve(
         "replacement",
-        (await ok(c.client, "start_copy", { plan_id: plan.id })).data.proposal,
+        (await ok(c.client, "start_copy", reviewStart(plan))).data.proposal,
       );
       await settle("replacement");
       const old = (await ok(c.client, "get_portfolio")).data.portfolio
@@ -1042,7 +1065,7 @@ try {
       const c = await oauth("guard");
       await ok(c.client, "set_preferences", pref);
       const plan = (await ok(c.client, "recommend_traders")).data.plan;
-      const q = (await ok(c.client, "start_copy", { plan_id: plan.id })).data
+      const q = (await ok(c.client, "start_copy", reviewStart(plan))).data
         .proposal;
       venue.available.set(users.guard, "450");
       const balance = await human("guard", "confirm", {
@@ -1062,7 +1085,7 @@ try {
       await repo.transact(users.guard, async (s) => {
         s.plans.find((p) => p.id === plan.id)!.expires_at = 0;
       });
-      const stale = await tool(c.client, "start_copy", { plan_id: plan.id });
+      const stale = await tool(c.client, "start_copy", reviewStart(plan));
       assert.equal(stale.error?.code, "PLAN_EXPIRED");
       assert.equal(
         venue.submits.filter((s) => s.user === users.guard).length,
@@ -1146,7 +1169,7 @@ try {
       const plan = (await ok(c.client, "recommend_traders")).data.plan;
       await approve(
         "windDown",
-        (await ok(c.client, "start_copy", { plan_id: plan.id })).data.proposal,
+        (await ok(c.client, "start_copy", reviewStart(plan))).data.proposal,
       );
       await settle("windDown");
       const portfolio = (await ok(c.client, "get_portfolio")).data.portfolio;
@@ -1230,7 +1253,7 @@ try {
       assert.ok(plan.allocations.every((a: any) => a.leverage_cap === 1));
       await approve(
         "prediction",
-        (await ok(c.client, "start_copy", { plan_id: plan.id })).data.proposal,
+        (await ok(c.client, "start_copy", reviewStart(plan))).data.proposal,
       );
       await settle("prediction");
       const portfolio = (await ok(c.client, "get_portfolio")).data.portfolio;
@@ -1263,14 +1286,16 @@ try {
       const plan = (await ok(c.client, "recommend_traders")).data.plan;
       const account = venue.accountFor(users.both);
       account.available_by_market = { perps: "300", prediction: "100" };
-      const insufficient = await tool(c.client, "start_copy", {
-        plan_id: plan.id,
-      });
+      const insufficient = await tool(
+        c.client,
+        "start_copy",
+        reviewStart(plan),
+      );
       assert.equal(insufficient.error?.code, "INSUFFICIENT_FUNDS");
       account.available_by_market.prediction = "300";
       await approve(
         "both",
-        (await ok(c.client, "start_copy", { plan_id: plan.id })).data.proposal,
+        (await ok(c.client, "start_copy", reviewStart(plan))).data.proposal,
       );
       await settle("both");
       const portfolio = (await ok(c.client, "get_portfolio")).data.portfolio;
@@ -1295,7 +1320,7 @@ try {
     const first = (
       await ok(c.client, "recommend_traders", { preferences: pref })
     ).data.plan;
-    const denied = await tool(c.client, "start_copy", { plan_id: first.id });
+    const denied = await tool(c.client, "start_copy", reviewStart(first));
     assert.equal(denied.error.code, "INSUFFICIENT_FUNDS");
     await repo.transact(users.preview, async (s) => {
       s.plans.find((p) => p.id === first.id)!.expires_at = 0;
@@ -1310,9 +1335,8 @@ try {
     assert.equal(cross.error.code, "NOT_FOUND");
     account.available_usdc = "500";
     venue.available.set(users.preview, "500");
-    const proposal = (
-      await ok(c.client, "start_copy", { plan_id: refreshed.id })
-    ).data.proposal;
+    const proposal = (await ok(c.client, "start_copy", reviewStart(refreshed)))
+      .data.proposal;
     assert.equal(proposal.status, "requires_confirmation");
     await approve("preview", proposal);
     await settle("preview");
@@ -1400,7 +1424,7 @@ try {
       };
     },
   );
-  await check("31 推荐批次切换保留编辑方案，免费次数不会重置", async () => {
+  await check("31 兼容旧分页入口，保留编辑方案并移除免费次数限制", async () => {
     const edited = await ok(v17.client, "recalculate_plan", {
       plan_id: v17Plan.id,
       preferences: v17Pref,
@@ -1423,14 +1447,18 @@ try {
       preferences: v17Pref,
       batch_action: "next",
     });
-    assert.equal(repeated.error?.code, "BATCH_LIMIT");
+    assert.equal(repeated.error, undefined);
+    assert.equal(
+      repeated.data.recommendation_batches.preview_quota_applies,
+      false,
+    );
     const original = await ok(v17.client, "recommend_traders", {
       preferences: v17Pref,
       batch_action: "saved",
       batch_index: 0,
     });
     assert.equal(original.data.plan.id, v17Plan.id);
-    return { plan_preserved: true, quota_enforced: true };
+    return { plan_preserved: true, quota_removed: true };
   });
   await check("32 兼容性确认绑定当前方案，确认前不下单", async () => {
     const q = await ok(v17.client, "start_copy", {
@@ -1486,7 +1514,7 @@ try {
       const plan = response.data.plan;
       assert.equal(plan.allocations.length, 1);
       assert.equal(plan.allocations[0].fixed_margin_usdc, "10.000000");
-      const q = await ok(single.client, "start_copy", { plan_id: plan.id });
+      const q = await ok(single.client, "start_copy", reviewStart(plan));
       assert.equal(q.status, "requires_confirmation");
       return { single_trader: true, fixed_margin_frozen: true };
     },
@@ -1504,14 +1532,12 @@ try {
     assert.equal(first.status, "requires_preferences");
     assert.deepEqual(first.data.preference_collection.missing_fields, [
       "budget_usdc",
-      "loss_trigger_pct",
-      "market",
+      "risk_tolerance",
     ]);
     await ok(user.client, "set_preferences", { budget_usdc: "500" });
     const partial = await ok(user.client, "get_preferences", {});
     assert.deepEqual(partial.data.preference_collection.missing_fields, [
-      "loss_trigger_pct",
-      "market",
+      "risk_tolerance",
     ]);
     await ok(user.client, "set_preferences", {
       loss_trigger_pct: 20,
@@ -1710,6 +1736,183 @@ try {
       } finally {
         venue.pool = oldPool;
       }
+    },
+  );
+  await check("41 对话只追问预算和风险，默认不限并同时返回两张表", async () => {
+    await repo.transact(users.widget, async (state) => {
+      for (const key of Object.keys(state)) delete (state as any)[key];
+      Object.assign(state, {
+        preferences: null,
+        plans: [],
+        portfolios: [],
+        proposals: [],
+        delegation: null,
+        updates: [],
+        checkpoints: [],
+      });
+    });
+    venue.pool = Array.from({ length: 24 }, (_, i) => ({
+      ...candidate(i + 1),
+      source_roi_pct: i + 1,
+    }));
+    const first = await ok(widgetClient, "get_preferences");
+    assert.deepEqual(first.data.preference_collection.missing_fields, [
+      "budget_usdc",
+      "risk_tolerance",
+    ]);
+    await ok(widgetClient, "set_preferences", { budget_usdc: "200" });
+    const partial = await ok(widgetClient, "get_preferences");
+    assert.deepEqual(partial.data.preference_collection.missing_fields, [
+      "risk_tolerance",
+    ]);
+    await ok(widgetClient, "set_preferences", { risk_tolerance: "medium" });
+    const d = (await ok(widgetClient, "recommend_traders")).data;
+    assert.equal(d.recommended_portfolio.length, 4);
+    assert.equal(d.candidate_table.length, 5);
+    assert.equal(d.preferences.market, "both");
+    assert.equal(d.preferences.asset_category, "any");
+    assert.equal(
+      d.preference_collection.sources.loss_trigger_pct,
+      "recommended",
+    );
+    assert.equal(d.final_review.execution_authorized, false);
+    const tools = (await widgetClient.listTools()).tools;
+    for (const name of [
+      "get_preferences",
+      "recommend_traders",
+      "browse_traders",
+    ])
+      assert.equal(
+        tools.find((t) => t.name === name)?._meta?.["openai/outputTemplate"],
+        undefined,
+      );
+    return {
+      two_core_answers: true,
+      two_chat_tables: true,
+      initial_widget: false,
+    };
+  });
+  await check("42 更多、全候选排序和比较保留方案，不重复候选", async () => {
+    const first = (await ok(widgetClient, "browse_traders", { limit: 10 }))
+      .data;
+    const second = (
+      await ok(widgetClient, "browse_traders", {
+        limit: 10,
+        cursor: first.candidates_meta.next_cursor,
+      })
+    ).data;
+    const third = (
+      await ok(widgetClient, "browse_traders", {
+        limit: 10,
+        cursor: second.candidates_meta.next_cursor,
+      })
+    ).data;
+    assert.equal(
+      new Set(
+        [...first.candidates, ...second.candidates, ...third.candidates].map(
+          (c) => c.id,
+        ),
+      ).size,
+      24,
+    );
+    assert.equal(third.candidates_meta.has_more, false);
+    const sorted = (
+      await ok(widgetClient, "browse_traders", { sort_by: "roi" })
+    ).data;
+    assert.equal(sorted.candidates[0].id, venue.pool[23].id);
+    const comparison = (
+      await ok(widgetClient, "browse_traders", {
+        compare_ids: venue.pool.slice(0, 2).map((c) => c.id),
+      })
+    ).data;
+    assert.equal(comparison.comparison.rows.length, 2);
+    assert.equal(comparison.candidates_meta.period_comparable, false);
+    for (const d of [second, third, sorted, comparison])
+      assert.equal(d.saved_plan_id, first.saved_plan_id);
+    return {
+      unique_candidates: 24,
+      sort_scope: "full verified snapshot",
+      plan_unchanged: true,
+    };
+  });
+  await check(
+    "43 自选交易员、修改分配和市场保留设置，资金核验后仅生成确认提案",
+    async () => {
+      const d = (
+        await ok(widgetClient, "recommend_traders", {
+          trader_ids: venue.pool.slice(0, 2).map((c) => c.id),
+        })
+      ).data;
+      const edit = (
+        await ok(widgetClient, "recalculate_plan", {
+          plan_id: d.plan.id,
+          allocations: d.plan.allocations.map((a: any) => ({
+            trader_id: a.trader.id,
+            amount_usdc: "90",
+            leverage_cap: 3,
+            stop_loss_pct: 25,
+          })),
+        })
+      ).data;
+      const changed = (
+        await ok(widgetClient, "recommend_traders", {
+          preferences: { market: "perps" },
+        })
+      ).data;
+      assert.equal(changed.plan.allocations[0].amount_usdc, "90.000000");
+      assert.equal(changed.plan.allocations[0].stop_loss_pct, 25);
+      const before = venue.submits.length;
+      const q = await ok(widgetClient, "start_copy", reviewStart(changed.plan));
+      assert.equal(q.status, "requires_confirmation");
+      assert.equal(venue.submits.length, before);
+      assert.equal(edit.requires_new_confirmation, true);
+      return {
+        choice_and_amount_preserved: true,
+        human_confirmation_required: true,
+        no_submission: true,
+      };
+    },
+  );
+  await check(
+    "44 自选人数 1/2/3/4 及真实最小金额阻碍仍显示完整候选",
+    async () => {
+      venue.pool = Array.from({ length: 11 }, (_, i) => candidate(i + 1));
+      for (const count of [1, 2, 3, 4]) {
+        const d = (
+          await ok(widgetClient, "recommend_traders", {
+            selection: "system",
+            preferences: {
+              budget_usdc: "200",
+              portfolio_kind: count === 1 ? "single" : "basket",
+              basket_size: count,
+            },
+          })
+        ).data;
+        assert.equal(d.plan.allocations.length, count);
+        assert.equal(d.candidates.length, 11);
+      }
+      const failed = await tool(widgetClient, "recommend_traders", {
+        preferences: {
+          budget_usdc: "40",
+          basket_size: 1,
+          portfolio_kind: "single",
+        },
+      });
+      assert.equal(failed.data.plan, null);
+      assert.equal(failed.data.candidates.length, 11);
+      assert.equal(
+        failed.data.recommendation_diagnostics.blocker,
+        "budget_minimums",
+      );
+      assert.equal(
+        failed.data.planning_constraints.minimum_allocation_usdc,
+        "50",
+      );
+      return {
+        exact_counts: [1, 2, 3, 4],
+        failure_keeps_candidates: true,
+        minimum_explained: true,
+      };
     },
   );
 } catch (e) {

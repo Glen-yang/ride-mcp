@@ -1,0 +1,30 @@
+# Ride MCP conversation flow — 2026-10-15
+
+This revision follows Ride MCP 1015 and the user's subsequent budget-and-risk-first requirements. It retains the six fixes in `widget-account-v043.md`. Earlier V17/v0.4.2 onboarding and batch descriptions are historical; this document and the current live guide supersede those parts.
+
+## Conversation and planning
+
+1. Read saved preferences and ask only for missing USDC budget and risk preference (low/medium/high). Preserve partial answers in either order. A previously explicit numerical risk constraint remains a custom answer. Do not infer a budget from account balance.
+2. Preserve explicit choices; otherwise disclose unrestricted Crypto/RWA, no symbol preset, both markets allowed and Ride-recommended copy mode. Market `both` allows results from either market independently. No initial count, market, loss percentage or execution questionnaire.
+3. Suggest editable numerical portfolio triggers using planning preset v1 (10/20/30% for low/medium/high). Record provenance as `user`, `default`, or `recommended`. Explicit numbers override presets. Suggestions are not user consent and are not guaranteed maximum losses.
+4. Recommend up to four feasible traders, including one. An explicit count/selection supports 1–8 and is never silently reduced. Disclose the existing Agent product minimum of 50 USDC per trader, any higher venue minimum, risk/venue leverage caps and execution restrictions. Existing frozen/approved legacy plans retain their semantics.
+5. Return `recommended_portfolio` and `candidate_table` for two compact native chat tables. The initial `candidate_page` covers the five-row table with total, timestamp and account-bound next cursor. The legacy full `candidates` array remains independent of plan failure. “Best” means prioritized within this verified source pool and constraints.
+6. `browse_traders` sorts the complete verified snapshot by score, historical drawdown or ROI; missing metrics sort last. Page sizes are 1–20; “more 10” uses limit 10 and the same query/cursor. Compare public IDs with `compare_ids`. Unknown metric windows remain unknown and are explicitly non-comparable. Production Perps currently profiles at most the top 30 by Copy Score, plus enabled Prediction results; do not call this all market traders.
+7. `trader_ids` pins the user's selected IDs, mapping one to single and multiple to basket. Preference edits preserve the selection and valid customized amounts/caps/exits. Explain conflicts without substituting traders or resetting allocations. `selection: system` explicitly clears the pin. Paging/sorting/comparison never replace the saved plan. No one-free-change quota remains; old batch inputs are retained only for compatibility.
+8. Patch preferences and allocation settings progressively. Recalculation preserves omitted settings and creates a new immutable preview. Show amount, allocation, unallocated budget, copy mode, leverage caps and portfolio/sleeve exit rules. Then verify per-market funds and create a frozen proposal for human Ride confirmation. No funds or trades are authorized by the preview.
+
+## Presentation and compatibility
+
+Discovery, preference and account tools no longer force a Widget. Their normal surface is AI conversation and small tables. Financial proposals retain the Ride review resource. The manually opened Widget offers a compact two-answer fallback; it no longer exposes a fourteen-field onboarding form or batch quota controls.
+
+The Skill, hosted guide, MCP tool descriptions and CLI use the same flow. `ride traders --sort drawdown --limit 10` and `ride traders --json '{"compare_ids":["PUBLIC_ID_A","PUBLIC_ID_B"]}'` use the same contracts. Existing tool arguments remain accepted; recalculate preferences/allocations can now be partial. State additions are optional JSON fields within the independent Agent table. No legacy App service, schema, account binding, approved portfolio or runner policy is changed.
+
+Unrestricted assets, raw OK removal, full per-market account balances, candidate visibility on failed plans, 1/2/3/4 plans and actionable diagnostics remain covered. Meme account coverage and historical loss correlation remain unavailable rather than zero. Uncapped source-leverage following is unsupported and explicitly disclosed; proportional sizing is separate.
+
+## Acceptance and release boundary
+
+Tests cover partial onboarding, provenance and explicit overrides, automatic 1–4 plans, exact manual counts, paging without duplicates, whole-snapshot sorting, comparisons, cursor ownership/expiry, selected allocation preservation, conditional Fixed settings and proposal-only execution. The shared execution/accounting fixture explicitly requests six traders to keep legacy receipts comparable; new automatic-count scenarios run separately.
+
+`npm run check`, the full suite with a disposable PostgreSQL database, real HTTP/MCP/OAuth/CLI functional scenarios, package install verification and local browser checks are separate evidence. The browser preview uses a clearly labelled scripted client with simulated venue/account data. It does not substitute for live AI-client or real-funds acceptance. Production deployment and npm publishing must be recorded separately; preparing version 0.5.0 does not mean it is released.
+
+Local evidence for this revision: 136/136 tests passed with PostgreSQL enabled; 44/44 real HTTP/MCP/OAuth/CLI scenarios passed; package verification passed clean installs/setup for Codex, Claude Code and Cursor, including no-argument setup. The v0.4.3 managed Skill/client migration is covered, and customized Skills remain protected. Word PRD was rendered and visually checked on all eight pages. No real funding, signing, orders, production deployment or npm publishing was performed for this revision.
