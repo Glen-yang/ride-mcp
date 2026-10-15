@@ -4,6 +4,10 @@
     "noEmit": true,
     "rootDir": "."
   },
-  "include": ["src/**/*.ts", "scripts/functional-acceptance.ts"],
+  "include": [
+    "src/**/*.ts",
+    "scripts/functional-acceptance.ts",
+    "scripts/apple-auth-preview.ts"
+  ],
   "exclude": []
 }

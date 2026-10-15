@@ -3,6 +3,7 @@ import { request as httpRequest } from "node:http";
 import type { AddressInfo } from "node:net";
 import type { Response } from "express";
 import { afterEach, describe, it } from "node:test";
+import { readFileSync } from "node:fs";
 import { runInNewContext } from "node:vm";
 
 import type { OAuthClientInformationFull } from "@modelcontextprotocol/sdk/shared/auth.js";
@@ -58,7 +59,7 @@ it("retries a failed Privy initialization with a fresh client and deduplicates c
   );
   const script = html
     .match(/<script type="module">([\s\S]*?)<\/script>/)![1]
-    .replace(/^\s*import Privy[^\n]*\n/m, "");
+    .replace(/^\s*import[^\n]*\n/gm, "");
   let attempts = 0;
   class MockPrivy {
     async initialize() {
@@ -92,7 +93,13 @@ it("retries a failed Privy initialization with a fresh client and deduplicates c
     },
   };
   runInNewContext(
-    script + "\nglobalThis.testAuth = { initPrivy, formatAuthError };",
+    readFileSync(
+      new URL("../public/privy-auth.js", import.meta.url),
+      "utf8",
+    ).replaceAll("export ", "") +
+      "\n" +
+      script +
+      "\nglobalThis.testAuth = { initPrivy, formatAuthError };",
     context,
   );
   await assert.rejects(context.testAuth.initPrivy(), /aborted/);

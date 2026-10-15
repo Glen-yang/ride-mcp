@@ -12,7 +12,7 @@ Node.js 20+ and an AI client are required. Run this single command:
 npx -y --prefer-online @glenyang/ride-cli@latest
 ```
 
-The installer detects Codex, Claude Code and Cursor. With one detected client it continues automatically; with multiple or no detected clients it shows a short selection menu. It installs the Skill, connects the production MCP and opens Ride login. Authorize with your own Ride account, then restart your AI client or open a new chat. The default command requests read and proposal access; execution still requires confirmation in Ride.
+The installer detects Codex, Claude Code and Cursor. With one detected client it continues automatically; with multiple or no detected clients it shows a short selection menu. It installs the Skill, connects the production MCP and opens Ride login. Choose the same Apple or Google account you use in Ride; Apple sign-in reuses an existing Ride identity. The MCP authorization, funding review and copy confirmation pages support both providers. Authorize with your own Ride account, then restart your AI client or open a new chat. The default command requests read and proposal access; execution still requires confirmation in Ride.
 
 For unattended configuration or an explicit client, the existing options remain available:
 

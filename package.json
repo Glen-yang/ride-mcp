@@ -63,6 +63,7 @@
     "public/agent.html",
     "public/confirm.html",
     "public/fund.html",
+    "public/privy-auth.js",
     "skills",
     "README.md",
     "LICENSE",

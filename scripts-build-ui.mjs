@@ -25,5 +25,10 @@ for (const name of ["agent", "confirm", "fund"]) {
       /\/\*INLINE_FUND\*\/[\s\S]*?(?=<\/script>)/,
       `/*INLINE_FUND*/${await readFile("public/fund-view.js", "utf8")}`,
     );
+  if (name === "confirm")
+    html = html.replace(
+      /\/\*INLINE_CONFIRM\*\/[\s\S]*?(?=<\/script>)/,
+      `/*INLINE_CONFIRM*/${await readFile("public/confirm-view.js", "utf8")}`,
+    );
   await writeFile(path, html);
 }

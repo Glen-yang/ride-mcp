@@ -20,12 +20,16 @@ try {
       `Unwanted package file: ${f.path}`,
     );
     assert(
-      /^(dist\/|public\/(agent|confirm|fund)\.html|skills\/|docs\/|README\.md|LICENSE|package\.json|\.env\.example)/.test(
+      /^(dist\/|public\/((agent|confirm|fund)\.html|privy-auth\.js)|skills\/|docs\/|README\.md|LICENSE|package\.json|\.env\.example)/.test(
         f.path,
       ),
       `Unexpected file: ${f.path}`,
     );
   }
+  assert(
+    packed.files.some((f) => f.path === "public/privy-auth.js"),
+    "Shared browser auth runtime must be packaged",
+  );
   execFileSync(
     "npm",
     [
