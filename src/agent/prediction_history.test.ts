@@ -235,3 +235,64 @@ it("walks funding cursors with identical filters, caches results, and refuses in
   assert.equal(invalid.source_drawdown_pct, null);
   assert.equal(invalid.metric_unavailable_reason, "incomplete_funding_ledger");
 });
+it("serves verified reconstructed metrics after background completion and across process restarts", async () => {
+  const records = new Map<string, any>();
+  let finish!: (value: any) => void,
+    loads = 0;
+  const result = {
+    metrics: {
+      source_roi_pct: 2,
+      source_drawdown_pct: 1,
+      metric_window: {
+        start_at: Date.now() - 29 * 86400000,
+        end_at: Date.now(),
+        basis: "polygon_inventory_nav_1m_daily_v2",
+      },
+      metric_provenance: {
+        source: "polygon_transfers_and_polymarket_historical_marks",
+        sampling: "daily",
+        estimated: true,
+        cashflow_adjusted: true,
+        flow_timing: "deposits_at_start_withdrawals_at_end",
+        reconciliation_difference_pct: 0,
+      },
+    },
+    evidence: { boundary_balances_verified: true },
+  };
+  const options = {
+    loader: {
+      load: async () => {
+        loads++;
+        return new Promise<any>((r) => {
+          finish = r;
+        });
+      },
+    },
+    key: () => "public-trader-id",
+    read: async (key: string) => records.get(key) ?? null,
+    write: async (key: string, record: any) => {
+      records.set(key, record);
+    },
+  };
+  const reader = new PredictionHistory(options);
+  (reader as any).nativeMetrics = async () => ({
+    source_roi_pct: null,
+    source_drawdown_pct: null,
+  });
+  const missing = await reader.metrics(wallet);
+  assert.equal(missing.source_drawdown_pct, null);
+  assert.equal(
+    missing.metric_unavailable_reason,
+    "equity_history_reconstruction_pending",
+  );
+  await reader.metrics(wallet);
+  assert.equal(loads, 1);
+  finish(result);
+  await new Promise((r) => setImmediate(r));
+  assert.deepEqual(await reader.metrics(wallet), result.metrics);
+  const restarted = new PredictionHistory(options);
+  (restarted as any).nativeMetrics = async () =>
+    assert.fail("Fresh reconstructed history must not require legacy PnL");
+  assert.deepEqual(await restarted.metrics(wallet), result.metrics);
+  assert.equal(loads, 1);
+});
