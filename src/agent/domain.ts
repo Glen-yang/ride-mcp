@@ -45,6 +45,7 @@ export interface Candidate {
     transfer_count?: number;
     max_price_age_seconds?: number;
     price_bucket_seconds?: number;
+    fallback_price_sources?: string[];
   };
   metric_unavailable_reason?: string;
   id: string;

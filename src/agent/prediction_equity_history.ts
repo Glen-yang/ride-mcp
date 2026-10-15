@@ -12,6 +12,7 @@ const abi20 = new Interface([
   "function balanceOf(address) view returns(uint256)",
   "function transfer(address,uint256) returns(bool)",
   "function transferFrom(address,address,uint256) returns(bool)",
+  "function VAULT() view returns(address)",
 ]);
 const safe = new Interface([
   "function execTransaction(address to,uint256 value,bytes data,uint8 operation,uint256 safeTxGas,uint256 baseGas,uint256 gasPrice,address gasToken,address refundReceiver,bytes signatures) returns(bool)",
@@ -120,6 +121,7 @@ export function collateralConversion(
   wallet: string,
   pusd: string,
   usdce: string,
+  vault = pusd,
 ) {
   const legs = movements.filter((m) => m.amount !== 0n);
   if (
@@ -141,8 +143,8 @@ export function collateralConversion(
     );
   return (
     p.from === lower(wallet) &&
-    p.to === ZeroAddress &&
-    u.from === lower(pusd) &&
+    (p.to === ZeroAddress || p.to === lower(pusd)) &&
+    u.from === lower(vault) &&
     u.to === lower(wallet)
   );
 }
@@ -269,8 +271,23 @@ export class PredictionEquityHistory {
     private contracts: () => Promise<Contracts>,
   ) {}
   async load(wallet: string): Promise<{ metrics: Metrics; evidence: unknown }> {
+    const controller = new AbortController();
+    const timer = setTimeout(
+      () => controller.abort(new Error("equity_history_timeout")),
+      300_000,
+    );
+    try {
+      return await this.reconstruct(wallet, controller.signal);
+    } finally {
+      clearTimeout(timer);
+      controller.abort();
+    }
+  }
+  private async reconstruct(
+    wallet: string,
+    signal: AbortSignal,
+  ): Promise<{ metrics: Metrics; evidence: unknown }> {
     check(/^0x[0-9a-f]{40}$/i.test(wallet), "invalid_history_identity");
-    const signal = AbortSignal.timeout(300_000);
     const read = async (url: URL | string, body?: unknown): Promise<Buffer> =>
       this.httpGate.run(async () => {
         signal.throwIfAborted();
@@ -333,7 +350,7 @@ export class PredictionEquityHistory {
     };
     const rpc = async (method: string, params: unknown[]): Promise<any> => {
       const id = ++rpcId;
-      if (method === "eth_call")
+      if (["eth_call", "eth_getTransactionByHash"].includes(method))
         return new Promise((resolve, reject) => {
           callQueue.push({
             payload: { jsonrpc: "2.0", id, method, params },
@@ -632,16 +649,32 @@ export class PredictionEquityHistory {
     const additionalFunding: Funding[] = [],
       inspected = new Map<string, any>(),
       conversions = new Set<string>();
+    let collateralVault: string | undefined;
     for (const m of movements.filter(
       (m) => m.at > start && m.amount !== 0n && !transactions.has(m.hash),
     )) {
       if (conversions.has(m.hash)) continue;
+      const related = movements.filter((other) => other.hash === m.hash);
+      if (
+        !collateralVault &&
+        related.length === 2 &&
+        related.every((leg) => leg.kind === "cash") &&
+        related[0].amount + related[1].amount === 0n
+      )
+        collateralVault = abi20.decodeFunctionResult(
+          "VAULT",
+          await rpc("eth_call", [
+            { to: c.collateral, data: abi20.encodeFunctionData("VAULT") },
+            hex(head),
+          ]),
+        )[0];
       if (
         collateralConversion(
-          movements.filter((other) => other.hash === m.hash),
+          related,
           wallet,
           c.collateral,
           c.wrapped_collateral,
+          collateralVault,
         )
       ) {
         conversions.add(m.hash);
@@ -766,6 +799,40 @@ export class PredictionEquityHistory {
       heldTokens.every((id) => refs.get(id)?.module === "v1_ctf"),
       "unsupported_historical_token_module",
     );
+    const resolutionHints = new Map<string, any>(),
+      hintTransactions = new Map<string, Promise<number | undefined>>();
+    const resolvedConditions = [
+      ...new Set(
+        [...refs.values()]
+          .filter((ref) => ref.resolved)
+          .map((ref) => ref.condition_id as string),
+      ),
+    ];
+    await Promise.all(
+      Array.from(
+        { length: Math.ceil(resolvedConditions.length / 20) },
+        async (_, index) => {
+          // Hints only accelerate locating a block. Both sides of the actual CTF
+          // payout transition are independently verified before a hint is accepted.
+          try {
+            const r = await data("/v2/resolutions", {
+              condition: resolvedConditions
+                .slice(index * 20, index * 20 + 20)
+                .join(","),
+            });
+            if (Array.isArray(r.data))
+              for (const row of r.data)
+                if (
+                  typeof row.condition_id === "string" &&
+                  row.status === "resolved"
+                )
+                  resolutionHints.set(lower(row.condition_id), row);
+          } catch {
+            /* The verified archive binary search remains available. */
+          }
+        },
+      ),
+    );
     const settlementBlocks = new Map<
       string,
       Promise<{ at: number; denominator: bigint } | null>
@@ -831,6 +898,43 @@ export class PredictionEquityHistory {
           if (current === 0n) return null;
           if ((await denominator(condition, startBlock)) > 0n)
             return { at: start, denominator: current };
+          const hint = resolutionHints.get(lower(condition));
+          let hintBlock = hint?.resolved_block;
+          if (
+            !Number.isSafeInteger(hintBlock) &&
+            /^0x[0-9a-f]{64}$/i.test(hint?.transaction_hash ?? "")
+          ) {
+            let transaction = hintTransactions.get(hint.transaction_hash);
+            if (!transaction) {
+              transaction = rpc("eth_getTransactionByHash", [
+                hint.transaction_hash,
+              ])
+                .then((tx) => Number(BigInt(tx.blockNumber)))
+                .catch(() => undefined);
+              hintTransactions.set(hint.transaction_hash, transaction);
+            }
+            hintBlock = await transaction;
+          }
+          if (
+            Number.isSafeInteger(hintBlock) &&
+            hintBlock > startBlock &&
+            hintBlock <= head
+          ) {
+            const [before, after] = await Promise.all([
+              denominator(condition, hintBlock - 1),
+              denominator(condition, hintBlock),
+            ]);
+            if (before === 0n && after === current) {
+              const settledBlock = await rpc("eth_getBlockByNumber", [
+                hex(hintBlock),
+                false,
+              ]);
+              return {
+                at: Number(BigInt(settledBlock.timestamp)),
+                denominator: current,
+              };
+            }
+          }
           let lo = startBlock,
             hi = head;
           while (hi - lo > 1) {
@@ -939,28 +1043,135 @@ export class PredictionEquityHistory {
         priceCurves.set(id, p);
       }),
     );
-    const curve = times.map((at, index) => {
-      const inventory = inventories[index];
-      let equity = addresses
-        .slice(0, 2)
-        .reduce(
-          (n, token) =>
-            n.plus(D(inventory.get(`cash:${token}`)!.toString()).div(1e6)),
-          D(0),
-        );
-      for (const id of heldTokens) {
-        const quantity = inventory.get(id)!;
-        if (quantity === 0n) continue;
-        equity = equity.plus(
-          D(quantity.toString())
-            .div(1e6)
-            .times(
-              historicalMark(priceCurves.get(id)!, at, settlements.get(id)),
+    const fallbackPriceSources = new Set<string>();
+    const priceAt = async (id: string, at: number) => {
+      const curve = priceCurves.get(id)!,
+        settlement = settlements.get(id);
+      try {
+        return historicalMark(curve, at, settlement);
+      } catch (e) {
+        if (!(e instanceof Error) || e.message !== "missing_historical_price")
+          throw e;
+        // A coarse series can have a hole while a finer point-in-time tier
+        // retains an actual observation. Keep the same age/no-future checks.
+        let cutoff = at;
+        try {
+          for (let attempt = 0; attempt < 2; attempt++) {
+            const r = await data("/v2/prices-history", {
+              token_id: id,
+              as_of: String(cutoff),
+            });
+            check(
+              Array.isArray(r.data) &&
+                r.data.length <= 1 &&
+                r.pagination?.has_more === false &&
+                r.pagination.next_cursor === null,
+              "invalid_historical_price_curve",
+            );
+            const point = r.data[0];
+            check(
+              point &&
+                Number.isSafeInteger(point.timestamp) &&
+                Number.isSafeInteger(point.resolution_seconds) &&
+                point.resolution_seconds >= 0 &&
+                point.resolution_seconds <= 10800 &&
+                valid(point.price) &&
+                point.price >= 0 &&
+                point.price <= 1,
+              "missing_historical_price",
+              { token_id: id, at },
+            );
+            if (point.timestamp + point.resolution_seconds <= at) {
+              try {
+                const price = historicalMark([point], at, settlement);
+                fallbackPriceSources.add("polymarket_data_v2_point_in_time");
+                return price;
+              } catch {
+                throw new Error("missing_historical_price", {
+                  cause: { token_id: id, at, observation: point },
+                });
+              }
+            }
+            cutoff = at - point.resolution_seconds;
+          }
+        } catch (error) {
+          if (
+            !(error instanceof Error) ||
+            error.message !== "missing_historical_price"
+          )
+            throw error;
+        }
+        // The official CLOB archive retains periodic marks absent from the
+        // native v2 tier. Request a bounded window and discard its occasionally
+        // appended terminal point outside that window. Never use it as history.
+        try {
+          const url = new URL("/prices-history", "https://clob.polymarket.com");
+          for (const [key, value] of Object.entries({
+            market: id,
+            startTs: String(at - 12 * 3600),
+            endTs: String(at),
+            fidelity: "60",
+          }))
+            url.searchParams.set(key, value);
+          const response = JSON.parse((await read(url)).toString());
+          check(
+            Array.isArray(response.history) && response.history.length <= 1000,
+            "missing_historical_price",
+          );
+          const points = response.history
+            .filter(
+              (p: any) =>
+                Number.isSafeInteger(p.t) && p.t >= at - 12 * 3600 && p.t <= at,
+            )
+            .map((p: any) => ({
+              timestamp: p.t,
+              price: p.p,
+              resolution_seconds: 3600,
+            }))
+            .sort((a: Mark, b: Mark) => a.timestamp - b.timestamp);
+          check(
+            points.every(
+              (p: Mark, i: number) =>
+                valid(p.price) &&
+                p.price >= 0 &&
+                p.price <= 1 &&
+                (!i || p.timestamp > points[i - 1].timestamp),
+            ),
+            "missing_historical_price",
+          );
+          const price = historicalMark(points, at, settlement);
+          fallbackPriceSources.add("polymarket_clob_prices_history");
+          return price;
+        } catch {
+          throw new Error("missing_historical_price", {
+            cause: { token_id: id, at },
+          });
+        }
+      }
+    };
+    const curve = await Promise.all(
+      times.map(async (at, index) => {
+        const inventory = inventories[index];
+        let equity = addresses
+          .slice(0, 2)
+          .reduce(
+            (n, token) =>
+              n.plus(D(inventory.get(`cash:${token}`)!.toString()).div(1e6)),
+            D(0),
+          );
+        const values = await Promise.all(
+          heldTokens
+            .filter((id) => inventory.get(id)! > 0n)
+            .map(async (id) =>
+              D(inventory.get(id)!.toString())
+                .div(1e6)
+                .times(await priceAt(id, at)),
             ),
         );
-      }
-      return { at, equity: equity.toString() };
-    });
+        equity = values.reduce((n, value) => n.plus(value), equity);
+        return { at, equity: equity.toString() };
+      }),
+    );
     const difference = D(curve.at(-1)!.equity)
       .minus(snapshot.equity)
       .abs()
@@ -973,7 +1184,6 @@ export class PredictionEquityHistory {
       tokens: heldTokens.map((id) => ({
         id,
         quantity: current.get(id)!.toString(),
-        price: historicalMark(priceCurves.get(id)!, end, settlements.get(id)),
       })),
     });
     check(
@@ -995,6 +1205,7 @@ export class PredictionEquityHistory {
       transfer_count: ids.size,
       max_price_age_seconds: 6 * 3600,
       price_bucket_seconds: 10800,
+      fallback_price_sources: [...fallbackPriceSources].sort(),
     });
     return {
       metrics,

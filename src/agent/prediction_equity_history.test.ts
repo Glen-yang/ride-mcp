@@ -192,6 +192,30 @@ it("recognizes complete internal collateral wrap/unwrap receipts without treatin
       usdce,
     ),
   );
+  const vault = "0x0000000000000000000000000000000000000020";
+  assert(
+    collateralConversion(
+      [
+        { ...p, from: wallet, to: pusd, amount: -p.amount },
+        { ...u, from: vault, to: wallet, amount: -u.amount },
+      ],
+      wallet,
+      pusd,
+      usdce,
+      vault,
+    ),
+  );
+  assert(
+    collateralConversion(
+      [
+        { ...p, from: wallet, to: pusd, amount: -p.amount },
+        { ...u, from: pusd, to: wallet, amount: -u.amount },
+      ],
+      wallet,
+      pusd,
+      usdce,
+    ),
+  );
   assert.equal(
     collateralConversion(
       [p, { ...u, amount: u.amount + 1n }],
@@ -266,7 +290,11 @@ it("reads archive boundaries and whole inventories even when PnL funding/history
     ),
   ).toString();
   let boundaryCalls = 0,
-    badPage = false;
+    badPage = false,
+    futureHistoricalPoint = false,
+    resolveDuringWindow = false,
+    allowClobFallback = false;
+  const asOfReads: number[] = [];
   t.mock.method(Date, "now", () => end * 1000 + 2000);
   t.mock.method(
     globalThis,
@@ -306,7 +334,11 @@ it("reads archive boundaries and whole inventories even when PnL funding/history
                 ]);
               else if (call.name === "payoutDenominator")
                 result = multi.encodeFunctionResult(call.name, [
-                  call.args[0] === `0x${"2".repeat(64)}` ? 1n : 0n,
+                  call.args[0] === conditionLost &&
+                  (!resolveDuringWindow ||
+                    Number(BigInt(tag)) * 2 >= start + 15 * 86400)
+                    ? 1n
+                    : 0n,
                 ]);
               else if (call.name === "getCollectionId")
                 result = multi.encodeFunctionResult(call.name, [
@@ -322,6 +354,17 @@ it("reads archive boundaries and whole inventories even when PnL funding/history
         );
       }
       const u = new URL(url);
+      if (u.hostname === "clob.polymarket.com") {
+        const at = Number(u.searchParams.get("endTs"));
+        return Response.json({
+          history: allowClobFallback
+            ? [
+                { t: at - 7200, p: 0.5 + (at - start) / 86400 / 60 },
+                { t: end + 86400, p: 1 },
+              ]
+            : [],
+        });
+      }
       const page = (data: unknown[]) =>
         Response.json({
           data,
@@ -352,18 +395,40 @@ it("reads archive boundaries and whole inventories even when PnL funding/history
             condition_id: id === tokenLive ? conditionLive : conditionLost,
             module: "v1_ctf",
             outcome_index: 0,
+            resolved: id === tokenLost,
           })),
+        });
+      if (u.pathname === "/v2/resolutions")
+        return Response.json({
+          data: [
+            {
+              condition_id: conditionLost,
+              status: "resolved",
+              resolved_block: (start + 5 * 86400) / 2,
+            },
+          ],
         });
       if (u.pathname === "/v2/prices-history")
         return page(
           u.searchParams.has("as_of")
-            ? [{ timestamp: end - 1, resolution_seconds: 0, price: 1 }]
+            ? (() => {
+                const at = Number(u.searchParams.get("as_of"));
+                asOfReads.push(at);
+                return [
+                  {
+                    timestamp:
+                      at < end && futureHistoricalPoint ? at + 1 : at - 1,
+                    resolution_seconds: 0,
+                    price: at < end ? 0.5 + (at - start) / 86400 / 60 : 1,
+                  },
+                ];
+              })()
             : [
                 ...Array.from({ length: 30 }, (_, i) => ({
                   timestamp: start + i * 86400 - 10800,
                   resolution_seconds: 10800,
                   price: 0.5 + i / 60,
-                })),
+                })).filter((_point, i) => i !== 10),
                 { timestamp: end - 1, resolution_seconds: 0, price: 1 },
               ],
         );
@@ -378,11 +443,30 @@ it("reads archive boundaries and whole inventories even when PnL funding/history
   const result = await reader.load(wallet);
   assert.equal(result.metrics.source_drawdown_pct, 0);
   assert.equal(result.metrics.source_roi_pct, 20);
+  assert(asOfReads.includes(start + 10 * 86400));
   assert(boundaryCalls >= 3);
   assert.equal(
     result.metrics.metric_provenance?.inventory_end_block_hash,
     "fixed",
   );
+  futureHistoricalPoint = true;
+  await assert.rejects(reader.load(wallet), /missing_historical_price/);
+  allowClobFallback = true;
+  const retained = await reader.load(wallet);
+  assert.equal(retained.metrics.source_roi_pct, 20);
+  assert(
+    retained.metrics.metric_provenance!.fallback_price_sources!.includes(
+      "polymarket_clob_prices_history",
+    ),
+  );
+  allowClobFallback = false;
+  futureHistoricalPoint = false;
   badPage = true;
   await assert.rejects(reader.load(wallet), /incomplete_chain_transfer_pages/);
+  badPage = false;
+  resolveDuringWindow = true;
+  const transition = await reader.load(wallet);
+  const curve = (transition.evidence as any).curve;
+  assert(Math.abs(Number(curve[10].equity) - 1400) < 1e-9);
+  assert.equal(Number(curve[15].equity), 1375);
 });
