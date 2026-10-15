@@ -192,13 +192,13 @@ function description(name: ToolName): string {
     set_notification_preferences:
       "Save explicitly requested daily Ride App digest opt-in, local time and IANA timezone. Critical risk alerts remain enabled; this does not authorize trading.",
     recommend_traders:
-      "First read get_preferences and ask its missing questions. Recommend using saved/user-supplied answers, or return questions without candidates if incomplete. Single or 2–8 explicit baskets, legacy 3–6; no funding is required for preview.",
+      "First read get_preferences and ask its missing questions. Recommend using saved/user-supplied answers, or return questions without candidates if incomplete. Default assets are unrestricted; both markets means either is allowed. Show candidates independently of plan errors and explain returned rules/feasible counts. Single or 2–8 explicit baskets, legacy 3–6; no funding is required for preview.",
     get_trader_profile:
       "Read verified source statistics and actual Copy Score components using a public trader ID.",
     start_copy:
       "Create an expiring start proposal. Human confirmation in Ride is required unless bounded Ride authority applies.",
     get_portfolio:
-      "Read the signed-in account, Agent portfolio and existing Ride App copies and positions. An empty Agent portfolio still confirms login. App copies remain separately managed in Ride. Missing values are null.",
+      "Read the signed-in account, per-market account balances, Agent portfolio and existing Ride App copies and positions. Account funds and copy allocation remaining are distinct; unavailable modules are null, not zero. An empty Agent portfolio still confirms login. App copies remain separately managed in Ride. Missing values are null.",
     update_copy:
       "Propose amount, leverage cap, sleeve loss trigger or an explicit eligible replacement. Released funds must be verified.",
     stop_copy:

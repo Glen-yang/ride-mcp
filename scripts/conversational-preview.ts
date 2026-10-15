@@ -8,9 +8,14 @@ import { Cursor, MemoryRepository } from "../src/agent/repository.js";
 import { uid, now } from "../src/agent/domain.js";
 import { mountHumanConfirmation } from "../src/agent/human.js";
 import { FakeAdapter, candidate } from "../src/agent/fixtures.js";
+import { invokeAccountRead } from "../src/account_reads.js";
+import { publicResult } from "../src/agent/contracts.js";
 const repository = new MemoryRepository(),
   adapter = new FakeAdapter();
-adapter.pool = Array.from({ length: 24 }, (_, i) => candidate(i + 1));
+adapter.pool = Array.from(
+  { length: Number(process.env.RIDE_PREVIEW_POOL_SIZE ?? 24) },
+  (_, i) => candidate(i + 1),
+);
 adapter.depositOptions = async () => ({
   routes: [
     {
@@ -75,6 +80,130 @@ const service = new AgentService(
 );
 const app = express();
 app.use(express.json({ limit: "32kb" }));
+if (process.env.RIDE_PREVIEW_WIDGET_REGRESSIONS === "1") {
+  // Local-only deterministic account sources; this process never reads a real account.
+  const owner = "0x" + "1".repeat(40),
+    proxy = "0x" + "2".repeat(40);
+  const sources = (async (url: any, init: any) => {
+    if (String(url).includes("polygon-bor-rpc.publicnode.com")) {
+      const calls = JSON.parse(init.body);
+      return Response.json(
+        calls.map((c: any, i: number) => ({
+          jsonrpc: "2.0",
+          id: c.id,
+          result:
+            c.method === "eth_chainId"
+              ? "0x89"
+              : c.method === "eth_getBlockByNumber"
+                ? {
+                    number: "0x123",
+                    timestamp:
+                      "0x" + Math.floor(Date.now() / 1000).toString(16),
+                  }
+                : "0x" +
+                  (BigInt([7, 0, 4][i]) * 1000000n)
+                    .toString(16)
+                    .padStart(64, "0"),
+        })),
+      );
+    }
+    if (String(url).includes("hyperliquid.xyz"))
+      return Response.json({
+        balances: [{ coin: "USDC", total: "3", hold: "0" }],
+      });
+    if (String(url).includes("polymarket.com"))
+      return Response.json([
+        { proxyWallet: proxy, asset: "fixture-token", currentValue: 3 },
+      ]);
+    const q = JSON.parse(init.body).query;
+    const me = {
+      id: "preview-user",
+      username: "Local fixture",
+      proxyWalletAddress: proxy,
+      legacyProxyWalletAddress: proxy,
+    };
+    if (q.includes("RideBalanceIdentity"))
+      return Response.json({ data: { me } });
+    if (q.includes("RidePredictionBalance"))
+      return Response.json({
+        data: {
+          walletBalance: {
+            proxyWalletAddress: proxy,
+            totalBalance: 7,
+            nativeUsdcBalance: 4,
+          },
+        },
+      });
+    if (q.includes("RideOwnedPerpsBalance"))
+      return Response.json({
+        data: {
+          hyperliquidAccountState: {
+            userId: me.id,
+            accountValue: "40",
+            withdrawable: "37",
+            totalMarginUsed: "3",
+            totalNtlPos: "60",
+            accountAbstraction: "disabled",
+            isStale: false,
+            wallet: {
+              masterWalletAddress: owner,
+              walletGeneration: 1,
+              status: "ACTIVE",
+            },
+            rawResponseJson: JSON.stringify({ time: Date.now() }),
+          },
+        },
+      });
+    return Response.json({
+      data: {
+        me,
+        copyTradeSummary: { totalAvailableFund: 7 },
+        myCopyTradeConfigs: [
+          { id: "fixture-copy", availableFund: 7, isEnabled: true },
+        ],
+        myPerpsAutoRideConfigs: [],
+        myPerpsAutoRidePositions: [],
+        ...Object.fromEntries(
+          [0, 1, 2, 3].map((i) => [
+            "positions" + i,
+            { positions: [], hasNextPage: false },
+          ]),
+        ),
+      },
+    });
+  }) as typeof fetch;
+  app.post("/agent/v1/get_portfolio", async (req, res) => {
+    if (req.get("authorization") !== "Bearer local-fixture") {
+      res.sendStatus(401);
+      return;
+    }
+    res.json(
+      publicResult(
+        await invokeAccountRead(
+          "get_portfolio",
+          req.body,
+          "local-fixture",
+          "https://fixture.invalid/graphql",
+          () => service.tool("preview-user", "get_portfolio", req.body),
+          sources,
+        ),
+      ),
+    );
+  });
+  app.post("/fixture/pool/:count", (req, res) => {
+    if (req.get("authorization") !== "Bearer local-fixture") {
+      res.sendStatus(401);
+      return;
+    }
+    const n = Number(req.params.count);
+    if (!Number.isInteger(n) || n < 0 || n > 24) {
+      res.sendStatus(400);
+      return;
+    }
+    adapter.pool = Array.from({ length: n }, (_, i) => candidate(i + 1));
+    res.json({ candidates: n });
+  });
+}
 app.get("/favicon.ico", (_req, res) => res.sendStatus(204));
 app.get("/cards", async (_req, res) =>
   res.type("html").send(await readFile("public/agent.html", "utf8")),

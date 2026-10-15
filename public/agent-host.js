@@ -8,10 +8,6 @@ function showError(message) {
   root.prepend(el("p", message, "warning error host-error"));
 }
 function accept(value) {
-  if (value?.error) {
-    showError(value.error.message);
-    return;
-  }
   if (value) {
     if (current) history.push(current);
     current = value;

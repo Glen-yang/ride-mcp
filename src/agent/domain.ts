@@ -66,6 +66,7 @@ export interface Allocation {
   emergency_exit_pct?: number;
 }
 export interface Plan {
+  asset_filter_version?: 2;
   id: string;
   created_at: number;
   expires_at: number;
@@ -195,6 +196,7 @@ export interface Execution {
   error: string | null;
 }
 export interface Portfolio {
+  asset_filter_version?: 2;
   id: string;
   account_id: string | null;
   revision: number;
@@ -274,9 +276,63 @@ export function recommendedLeverage(
   const cap = Math.min(c.venue_max_leverage, atrCap, riskCap, toleranceCap);
   return cap >= 3 ? cap : null;
 }
+// Asset category and symbol restrictions are independent of the market selector.
+// Empty symbols + allow_altcoins means unrestricted assets, including BTC/ETH.
+export function assetAllowed(
+  p: Preferences,
+  asset: string,
+  category?: string,
+  version = 2,
+): boolean {
+  if (version !== 2) {
+    if (p.asset_category === "any") return true;
+    if (p.asset_category === "rwa") return category === "rwa";
+    return p.allow_altcoins || p.assets.includes(asset);
+  }
+  if (
+    p.asset_category &&
+    p.asset_category !== "any" &&
+    category !== p.asset_category
+  )
+    return false;
+  if (!p.assets.length) return p.allow_altcoins;
+  return (
+    p.assets.some((a) => a.toLowerCase() === asset.toLowerCase()) ||
+    (p.allow_altcoins && !["BTC", "ETH"].includes(asset.toUpperCase()))
+  );
+}
+export function matchesAssets(
+  p: Preferences,
+  c: Candidate,
+  version = 2,
+): boolean {
+  if (version !== 2)
+    return (
+      c.assets.length > 0 &&
+      (!p.asset_category ||
+        p.asset_category === "any" ||
+        c.asset_category === p.asset_category) &&
+      (c.market === "prediction" ||
+        c.assets.every(
+          (a) =>
+            (p.asset_category === "rwa" && c.asset_category === "rwa") ||
+            p.asset_category === "any" ||
+            p.assets.includes(a) ||
+            (p.allow_altcoins && !["BTC", "ETH"].includes(a)),
+        ))
+    );
+  return (
+    c.assets.length > 0 &&
+    (c.market === "prediction" ||
+      c.assets.every((a) =>
+        assetAllowed(p, a, c.asset_categories?.[a] ?? c.asset_category),
+      ))
+  );
+}
 export function eligibleCandidates(
   p: Preferences,
   candidates: Candidate[],
+  version = 2,
 ): Candidate[] {
   return candidates
     .filter(
@@ -286,82 +342,73 @@ export function eligibleCandidates(
         c.expires_at > now() &&
         fresh(c.scored_at, 36 * 3600_000) &&
         (p.market === "both" || c.market === p.market) &&
-        (!p.asset_category ||
-          p.asset_category === "any" ||
-          (c.asset_category ?? "unknown") === p.asset_category) &&
-        c.assets.length > 0 &&
+        matchesAssets(p, c, version) &&
         recommendedLeverage(p, c) !== null &&
-        (c.market === "prediction" ||
-          c.assets.every(
-            (a) =>
-              (p.asset_category === "rwa" && c.asset_category === "rwa") ||
-              p.asset_category === "any" ||
-              p.assets.includes(a) ||
-              (p.allow_altcoins && !["BTC", "ETH"].includes(a)),
-          )),
+        !(p.copy_mode === "fixed" && c.market === "prediction"),
     )
     .sort((a, b) => b.score - a.score || a.id.localeCompare(b.id));
 }
-export function recommend(p: Preferences, candidates: Candidate[]): Plan {
-  const allowed = eligibleCandidates(p, candidates);
+export const minimumAllocation = (p: Preferences, c: Candidate) =>
+  p.portfolio_kind ? D.max(50, c.min_notional_usdc) : D(c.min_notional_usdc);
+export function requestedTraderCount(p: Preferences): number {
+  return p.portfolio_kind === "single"
+    ? 1
+    : (p.basket_size ?? (p.portfolio_kind === "basket" ? 4 : 6));
+}
+function selectForCount(
+  p: Preferences,
+  candidates: Candidate[],
+  count: number,
+): Candidate[] {
+  const amount = D(p.budget_usdc)
+    .div(count)
+    .toDecimalPlaces(6, Decimal.ROUND_DOWN);
+  const allowed = eligibleCandidates(p, candidates).filter((c) =>
+    amount.gte(minimumAllocation(p, c)),
+  );
   const chosen: Candidate[] = [];
-  const maximum =
-    p.portfolio_kind === "single"
-      ? 1
-      : p.portfolio_kind === "basket"
-        ? (p.basket_size ?? 4)
-        : 6;
-  const minimum =
-    p.portfolio_kind === "single" ? 1 : p.portfolio_kind === "basket" ? 2 : 3;
-  if (maximum < minimum)
-    throw new AgentError(
-      "INVALID_BASKET",
-      "A basket needs at least two traders.",
-      false,
-      400,
-    );
-  while (chosen.length < maximum && allowed.length) {
+  while (chosen.length < count && allowed.length) {
     allowed.sort(
       (a, b) =>
         diversity(b, chosen) - diversity(a, chosen) || a.id.localeCompare(b.id),
     );
-    const c = allowed.shift()!;
-    const count = chosen.length + 1;
-    const minimumAmount = p.portfolio_kind
-      ? D.max(50, c.min_notional_usdc)
-      : D(c.min_notional_usdc);
-    if (D(p.budget_usdc).div(count).lt(minimumAmount)) continue;
-    if (
-      chosen.some((x) =>
-        D(p.budget_usdc)
-          .div(count)
-          .lt(
-            p.portfolio_kind
-              ? D.max(50, x.min_notional_usdc)
-              : x.min_notional_usdc,
-          ),
-      )
-    )
-      continue;
-    chosen.push(c);
+    chosen.push(allowed.shift()!);
   }
-  if (chosen.length < minimum)
+  return chosen;
+}
+export function recommend(p: Preferences, candidates: Candidate[]): Plan {
+  const maximum = requestedTraderCount(p);
+  const minimum =
+    p.portfolio_kind === "single" ? 1 : p.portfolio_kind === "basket" ? 2 : 3;
+  if (maximum < minimum || maximum > (p.portfolio_kind ? 8 : 6))
+    throw new AgentError(
+      "INVALID_BASKET",
+      `Select ${minimum}–${p.portfolio_kind ? 8 : 6} traders for this plan.`,
+      false,
+      400,
+    );
+  let chosen: Candidate[] = [];
+  // An explicit count is never silently reduced. Return feasible alternatives instead.
+  for (
+    let count = maximum;
+    count >= (p.portfolio_kind ? maximum : minimum);
+    count--
+  ) {
+    const selection = selectForCount(p, candidates, count);
+    if (selection.length === count) {
+      chosen = selection;
+      break;
+    }
+  }
+  if (!chosen.length)
     throw new AgentError(
       "NO_EXECUTABLE_PLAN",
-      `Fewer than ${minimum} fresh, eligible traders fit this budget and market preference.`,
+      `The requested ${maximum}-trader plan is unavailable. Review the returned rules and feasible counts.`,
     );
-  if (
-    p.market === "both" &&
-    !(["perps", "prediction"] as Venue[]).every((m) =>
-      chosen.some((c) => c.market === m),
-    )
-  )
-    throw new AgentError(
-      "NO_EXECUTABLE_PLAN",
-      "Both markets require eligible, executable candidates in each market.",
-    );
+  // 'both' is an allowed search universe, not a mandatory cross-market allocation.
   const amounts = allocate(p.budget_usdc, chosen.length);
   return {
+    asset_filter_version: 2,
     id: uid("plan"),
     created_at: now(),
     expires_at: now() + 10 * 60_000,
@@ -394,6 +441,7 @@ export function recommendationDiagnostics(
   p: Preferences,
   candidates: Candidate[],
 ) {
+  const requested = requestedTraderCount(p);
   const minimum =
     p.portfolio_kind === "single" ? 1 : p.portfolio_kind === "basket" ? 2 : 3;
   const marketRows = candidates.filter(
@@ -403,38 +451,162 @@ export function recommendationDiagnostics(
     (c) => c.expires_at > now() && fresh(c.scored_at, 36 * 3600_000),
   );
   const qualified = freshRows.filter((c) => c.eligibility === "PASS");
-  const assets = qualified.filter(
-    (c) =>
-      c.assets.length &&
-      (c.market === "prediction" ||
-        c.assets.every(
-          (a) =>
-            p.assets.includes(a) ||
-            (p.allow_altcoins && !["BTC", "ETH"].includes(a)),
-        )),
-  );
+  const assets = qualified.filter((c) => matchesAssets(p, c));
   const eligible = eligibleCandidates(p, candidates);
+  const amount = D(p.budget_usdc)
+    .div(requested)
+    .toDecimalPlaces(6, Decimal.ROUND_DOWN);
   const affordable = eligible.filter((c) =>
-    D(p.budget_usdc).div(minimum).gte(c.min_notional_usdc),
+    amount.gte(minimumAllocation(p, c)),
+  );
+  const feasible = Array.from({ length: 8 }, (_, i) => i + 1).filter(
+    (count) => {
+      const alternative = {
+        ...p,
+        portfolio_kind: count === 1 ? ("single" as const) : ("basket" as const),
+        basket_size: count,
+      };
+      return selectForCount(alternative, candidates, count).length === count;
+    },
   );
   const blocker = !candidates.length
     ? "source_data_unavailable"
     : !marketRows.length
       ? "market_source_data_unavailable"
-      : freshRows.length < minimum && freshRows.length < marketRows.length
+      : !freshRows.length
         ? "stale_source_scores"
-        : qualified.length < minimum && qualified.length < freshRows.length
+        : !qualified.length
           ? "source_eligibility"
-          : assets.length < minimum && assets.length < qualified.length
+          : !assets.length
             ? "asset_preferences"
-            : eligible.length < minimum && eligible.length < assets.length
-              ? "risk_limits_or_missing_risk_data"
-              : eligible.length < minimum
-                ? "eligible_trader_supply"
-                : affordable.length < minimum
-                  ? "budget_minimums"
-                  : "basket_diversification";
+            : !eligible.length
+              ? "risk_execution_or_copy_mode"
+              : affordable.length < Math.min(minimum, eligible.length)
+                ? "budget_minimums"
+                : eligible.length < requested
+                  ? "eligible_trader_supply"
+                  : affordable.length < requested
+                    ? "budget_minimums"
+                    : null;
+  const evaluations = candidates.map((c) => {
+    const rules: {
+      rule: string;
+      field: string;
+      current: unknown;
+      required: unknown;
+      message: string;
+    }[] = [];
+    const add = (
+      rule: string,
+      field: string,
+      current: unknown,
+      required: unknown,
+      message: string,
+    ) => rules.push({ rule, field, current, required, message });
+    if (p.market !== "both" && c.market !== p.market)
+      add(
+        "market",
+        "market",
+        c.market,
+        p.market,
+        "Trader belongs to another market.",
+      );
+    if (c.expires_at <= now() || !fresh(c.scored_at, 36 * 3600_000))
+      add(
+        "stale_score",
+        "scored_at",
+        c.scored_at,
+        "fresh score within 36 hours",
+        "Score expired or its data is unavailable.",
+      );
+    if (c.eligibility !== "PASS")
+      add(
+        "source_eligibility",
+        "eligibility",
+        c.eligibility,
+        "PASS",
+        "Source qualification did not pass.",
+      );
+    if (!matchesAssets(p, c))
+      add(
+        "asset_preferences",
+        "asset_category/assets",
+        { category: c.asset_category, assets: c.assets },
+        {
+          category: p.asset_category,
+          assets: p.assets,
+          allow_altcoins: p.allow_altcoins,
+        },
+        "Trader assets do not match the saved asset preference.",
+      );
+    if (c.execution_supported === false)
+      add(
+        "execution_unsupported",
+        "execution_supported",
+        false,
+        true,
+        "Venue/account execution is unsupported.",
+      );
+    if (recommendedLeverage(p, c) === null)
+      add(
+        c.source_drawdown_pct == null ? "missing_risk_data" : "risk_limit",
+        "loss_trigger_pct",
+        {
+          loss_trigger_pct: p.loss_trigger_pct,
+          source_drawdown_pct: c.source_drawdown_pct,
+        },
+        c.market === "prediction"
+          ? "at least 1x within the requested loss trigger"
+          : "at least 3x within the requested loss trigger",
+        "Missing risk evidence or loss/risk/venue caps prevent executable leverage. Review trader risk data; raising risk is not automatic.",
+      );
+    if (p.copy_mode === "fixed" && c.market === "prediction")
+      add(
+        "copy_mode",
+        "copy_mode",
+        "fixed",
+        "Perps trader or another copy mode",
+        "Prediction does not support Fixed margin mode.",
+      );
+    if (amount.lt(minimumAllocation(p, c)))
+      add(
+        "allocation_minimum",
+        "budget_usdc/basket_size",
+        {
+          budget_usdc: p.budget_usdc,
+          count: requested,
+          per_trader_usdc: cash(amount),
+        },
+        {
+          per_trader_usdc: cash(minimumAllocation(p, c)),
+          venue_minimum_usdc: c.min_notional_usdc,
+          policy_minimum_usdc: p.portfolio_kind ? "50.000000" : null,
+        },
+        "Allocation per trader is below the venue or disclosed product minimum. Choose a feasible smaller count or review the budget.",
+      );
+    return {
+      trader_id: c.id,
+      eligible: eligible.some((e) => e.id === c.id),
+      budget_eligible: affordable.some((e) => e.id === c.id),
+      rules,
+    };
+  });
   return {
+    diagnostic_id: uid("diag"),
+    stage: !blocker
+      ? "plan_ready"
+      : ({
+          source_data_unavailable: "source_candidates",
+          market_source_data_unavailable: "market_filter",
+          stale_source_scores: "score_freshness",
+          source_eligibility: "source_qualification",
+          asset_preferences: "asset_filter",
+          risk_execution_or_copy_mode: "risk_execution_and_copy_mode",
+          budget_minimums: "allocation_minimums",
+          eligible_trader_supply: "requested_trader_count",
+        }[blocker] ?? "plan_allocation"),
+    count_semantics:
+      "Sequential filters; each count is a subset of the preceding count. Budget qualification uses the requested count.",
     source_candidates: candidates.length,
     market_candidates: marketRows.length,
     fresh_candidates: freshRows.length,
@@ -443,9 +615,46 @@ export function recommendationDiagnostics(
     eligible_candidates: eligible.length,
     budget_eligible_candidates: affordable.length,
     minimum_basket_size: minimum,
+    requested_basket_size: requested,
+    feasible_basket_sizes: feasible,
     blocker,
     funding_required: false,
     execution_available: false,
+    market_counts: {
+      perps: eligible.filter((c) => c.market === "perps").length,
+      prediction: eligible.filter((c) => c.market === "prediction").length,
+    },
+    rules: [
+      ...(blocker && eligible.length && affordable.length < requested
+        ? [
+            {
+              trader_id: "plan",
+              rule: blocker,
+              field: "basket_size",
+              current: requested,
+              required: feasible,
+              message: `Requested ${requested} traders; ${eligible.length} qualify and ${affordable.length} meet the per-trader minimum at this count. ${feasible.length ? `Review a ${feasible.join(" or ")}-trader plan with the same risk settings.` : "No supported count is executable; inspect the trader minimums and eligibility rules."}`,
+            },
+          ]
+        : []),
+      ...evaluations.flatMap((e) =>
+        e.rules.map((r) => ({ ...r, trader_id: e.trader_id })),
+      ),
+    ],
+    candidate_evaluations: evaluations,
+    adjustments: feasible
+      .filter((n) => n !== requested)
+      .map((count) => ({
+        label: `Review ${count}-trader plan`,
+        field: "basket_size",
+        current: requested,
+        required: count,
+        preferences: {
+          ...p,
+          portfolio_kind: count === 1 ? "single" : "basket",
+          basket_size: count,
+        },
+      })),
   };
 }
 function diversity(c: Candidate, chosen: Candidate[]): number {

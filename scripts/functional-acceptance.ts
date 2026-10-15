@@ -57,6 +57,7 @@ const users = {
   v17: randomUUID(),
   v17Single: randomUUID(),
   v17Rwa: randomUUID(),
+  widget: randomUUID(),
 };
 const identities = new Map(
   Object.entries(users).map(([name, id]) => ["fixture_core_" + name, id]),
@@ -66,6 +67,7 @@ let gateway: ReturnType<typeof spawn> | undefined;
 let gatewayLogs = "";
 const clients: Client[] = [];
 let unknownClient: Client;
+let widgetClient: Client;
 const reportPath = resolve("output/deployment/functional-acceptance.json");
 async function listen(app: any) {
   const s = app.listen(0, "127.0.0.1");
@@ -577,7 +579,10 @@ try {
     const v = await ok(alice.client, "start_copy", { plan_id: plan.id });
     start = v.data.proposal;
     assert.equal(start.status, "requires_confirmation");
-    assert.equal((await ok(alice.client, "get_portfolio")).status, "empty");
+    assert.equal(
+      (await ok(alice.client, "get_portfolio")).data.agent_portfolio_status,
+      "empty",
+    );
     assert.equal(venue.submits.length, 0);
     return {
       status: start.status,
@@ -1605,6 +1610,106 @@ try {
         submitted_once: true,
         verified_credit_state: true,
       };
+    },
+  );
+  await check(
+    "38 新偏好默认不限；11 位单一市场候选生成 1/2/3/4 人方案",
+    async () => {
+      const user = await oauth("widget"),
+        oldPool = venue.pool;
+      widgetClient = user.client;
+      const submits = venue.submits.length;
+      try {
+        venue.pool = Array.from({ length: 11 }, (_, i) => candidate(i + 1));
+        const saved = await ok(user.client, "set_preferences", {
+          budget_usdc: "200",
+          market: "both",
+          loss_trigger_pct: 10,
+          risk_tolerance: "medium",
+        });
+        assert.equal(saved.data.preferences.asset_category, "any");
+        assert.deepEqual(saved.data.preferences.assets, []);
+        assert.equal(saved.data.preferences.allow_altcoins, true);
+        for (const count of [1, 2, 3, 4]) {
+          const v = await ok(user.client, "recommend_traders", {
+            preferences: {
+              portfolio_kind: count === 1 ? "single" : "basket",
+              basket_size: count,
+            },
+          });
+          assert.equal(v.data.candidates.length, 11);
+          assert.equal(v.data.plan.allocations.length, count);
+          assert.deepEqual(v.data.market_coverage.selected, ["perps"]);
+          assert.equal(v.data.plan.preferences.risk_tolerance, "medium");
+          assert.equal(v.data.plan.preferences.loss_trigger_pct, 10);
+          assert.equal(
+            cash(
+              v.data.plan.allocations.reduce(
+                (n: any, a: any) => n.plus(a.amount_usdc),
+                D(0),
+              ),
+            ),
+            "200.000000",
+          );
+        }
+        assert.equal(venue.submits.length, submits);
+        return {
+          counts: [1, 2, 3, 4],
+          eligible: 11,
+          market: "perps",
+          default_assets: "any",
+          no_orders: true,
+        };
+      } finally {
+        venue.pool = oldPool;
+      }
+    },
+  );
+  await check(
+    "39 组合失败保留候选、诊断和同风险备选；余额缺失不冒充零",
+    async () => {
+      const user = { client: widgetClient },
+        oldPool = venue.pool;
+      try {
+        venue.pool = [candidate(1), candidate(2)];
+        const v = await tool(user.client, "recommend_traders", {
+          preferences: { portfolio_kind: "basket", basket_size: 4 },
+        });
+        assert.equal(v.error.code, "NO_EXECUTABLE_PLAN");
+        assert.equal(v.data.plan, null);
+        assert.equal(v.data.candidates.length, 2);
+        const d = v.data.recommendation_diagnostics;
+        assert.equal(d.requested_basket_size, 4);
+        assert.deepEqual(d.feasible_basket_sizes, [1, 2]);
+        assert(
+          d.rules.some(
+            (r: any) => r.field === "basket_size" && r.current === 4,
+          ),
+        );
+        const alternative = await ok(user.client, "recommend_traders", {
+          preferences: d.adjustments.find((a: any) => a.required === 2)
+            .preferences,
+        });
+        assert.equal(alternative.data.plan.allocations.length, 2);
+        assert.equal(alternative.data.plan.preferences.loss_trigger_pct, 10);
+        const account = await ok(user.client, "get_portfolio");
+        assert.equal(
+          account.data.account_balances.markets.perps.account_value_usd,
+          null,
+        );
+        assert.equal(
+          account.data.account_balances.summary.account_value_usd,
+          null,
+        );
+        return {
+          candidates: 2,
+          requested: 4,
+          feasible: [1, 2],
+          missing_balance: null,
+        };
+      } finally {
+        venue.pool = oldPool;
+      }
     },
   );
 } catch (e) {

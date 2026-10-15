@@ -331,7 +331,23 @@ function render(root, value, openLink = () => {}, callTool = () => {}) {
     welcome(root, callTool);
     return;
   }
-  root.append(el("div", value.status, "status"));
+  if (value.data?.preference_saved)
+    root.append(el("p", "Preferences saved", "status"));
+  else if (
+    ["queued", "executing", "uncertain", "settling"].includes(value.status)
+  )
+    root.append(
+      el(
+        "p",
+        {
+          queued: "Confirmed changes queued",
+          executing: "Execution in progress",
+          uncertain: "Execution status needs verification",
+          settling: "Settlement pending",
+        }[value.status],
+        "status",
+      ),
+    );
   const d = value.data ?? {};
   if (d.account?.authenticated) {
     root.append(
@@ -370,10 +386,20 @@ function render(root, value, openLink = () => {}, callTool = () => {}) {
     );
     root.append(account);
   }
-  if (value.error) {
-    root.append(el("p", value.error.message, "warning error"));
-    return;
-  }
+  if (d.account_balances)
+    renderAccountBalances(root, d.account_balances, callTool);
+  if (value.error) root.append(el("p", value.error.message, "warning error"));
+  if (d.recommendation_diagnostics && (value.error || !d.plan))
+    renderRecommendationDiagnostics(root, d, callTool);
+  if (Array.isArray(d.candidates)) renderCandidates(root, d, callTool);
+  if (d.market_coverage)
+    root.append(
+      el(
+        "p",
+        `Allowed markets: ${d.market_coverage.requested}. Selected: ${d.market_coverage.selected.join(", ")}. Either market may be selected; both are not required.`,
+        "muted",
+      ),
+    );
   if (d.deposit_options)
     renderDepositOptions(root, d.deposit_options, callTool);
   if (d.deposit) renderDeposit(root, d.deposit, callTool);
@@ -432,13 +458,20 @@ function render(root, value, openLink = () => {}, callTool = () => {}) {
     }
     root.append(c);
   }
-  if (d.preference_collection && !d.preference_collection.ready) {
+  if (d.preference_collection) {
     const collection = d.preference_collection;
     root.append(
       el("p", collection.questions.map((q) => q.question).join(" "), "warning"),
     );
     welcome(root, callTool, collection.answers);
-  } else if (d.preferences) welcome(root, callTool, d.preferences);
+  } else if (d.preferences) {
+    if (d.plan) {
+      const details = el("details");
+      details.append(el("summary", "Edit saved preferences"));
+      welcome(details, callTool, d.preferences);
+      root.append(details);
+    } else welcome(root, callTool, d.preferences, d.recommendation_diagnostics);
+  }
   if (d.funding) {
     const c = card("Fund your trading account"),
       f = d.funding;
@@ -542,7 +575,7 @@ function render(root, value, openLink = () => {}, callTool = () => {}) {
       el("h1", "Your portfolio"),
       el("p", `${p.state} · ${p.id}`, "muted"),
     );
-    const overview = card("Actual account");
+    const overview = card("Agent trading account snapshot");
     overview.append(
       row("Account value", usdc(p.account_value_usdc)),
       row("Reconciled net profit", usdc(p.net_profit_usdc)),
@@ -768,11 +801,10 @@ function render(root, value, openLink = () => {}, callTool = () => {}) {
               : args,
           ),
         {
+          ...(d.preferences ?? {}),
           portfolio_kind: "single",
           basket_size: 1,
-          market: t.market,
-          assets: t.assets,
-          asset_category: t.asset_category === "rwa" ? "rwa" : "crypto",
+          market: d.preferences?.market ?? t.market,
         },
       );
     });
@@ -873,6 +905,201 @@ function render(root, value, openLink = () => {}, callTool = () => {}) {
     ),
   );
 }
+const candidateSelections = new WeakMap();
+function renderCandidates(root, data, callTool) {
+  const candidates = data.candidates,
+    pref = data.preferences ?? data.plan?.preferences;
+  const c = card("Eligible trader candidates"),
+    selected = new Set(
+      candidateSelections.get(data) ??
+        data.plan?.allocations.map((a) => a.trader.id) ??
+        [],
+    );
+  const meta = data.candidates_meta ?? { total: candidates.length };
+  c.append(
+    el(
+      "p",
+      `${candidates.length} returned · ${meta.total} eligible in total. Candidates and plan generation are separate.`,
+      "muted",
+    ),
+  );
+  if (!candidates.length)
+    c.append(
+      el(
+        "p",
+        "No eligible candidates under the current filters. Review the diagnostic rules below.",
+      ),
+    );
+  const rows = el("div", null, "grid"),
+    selection = el("p", "Select 1–8 traders to review a plan.", "muted");
+  const generate = el("button", "Generate plan from selected traders");
+  const update = () => {
+    candidateSelections.set(data, [...selected]);
+    generate.disabled = !pref || selected.size < 1 || selected.size > 8;
+    selection.textContent = `${selected.size} traders selected · ${pref?.budget_usdc ?? "Unavailable"} USDC budget · risk and loss settings unchanged`;
+  };
+  let shown = 0;
+  const more = el("button", "Load more candidates", "secondary");
+  const appendPage = () => {
+    for (const t of candidates.slice(shown, shown + 8)) {
+      const r = card(t.handle);
+      r.append(
+        row(
+          "Market / category",
+          `${t.market} / ${t.asset_category ?? "unavailable"}`,
+        ),
+        row("Copy Score", t.score),
+        row("Trading assets", t.assets?.join(", ") || "Unavailable"),
+        row("Qualification", t.eligibility),
+      );
+      const info = (
+        data.recommendation_diagnostics?.candidate_evaluations ?? []
+      ).find((x) => x.trader_id === t.id);
+      if (info)
+        r.append(
+          row(
+            "Fits requested per-trader budget",
+            info.budget_eligible ? "Yes" : "No · review the allocation minimum",
+          ),
+        );
+      const label = el("label", "Select trader", "field"),
+        check = el("input");
+      check.type = "checkbox";
+      check.checked = selected.has(t.id);
+      check.addEventListener("change", () => {
+        if (check.checked) selected.add(t.id);
+        else selected.delete(t.id);
+        update();
+      });
+      label.append(check);
+      const details = el("button", "Trader details", "secondary");
+      details.addEventListener("click", () =>
+        callTool("get_trader_profile", { trader_id: t.id }),
+      );
+      r.append(label, details);
+      rows.append(r);
+    }
+    shown = Math.min(candidates.length, shown + 8);
+    more.hidden = shown >= candidates.length;
+    more.textContent = `Load remaining candidates (${candidates.length - shown})`;
+  };
+  more.addEventListener("click", appendPage);
+  appendPage();
+  update();
+  generate.addEventListener("click", () =>
+    callTool("recommend_traders", {
+      preferences: {
+        ...pref,
+        portfolio_kind: selected.size === 1 ? "single" : "basket",
+        basket_size: selected.size,
+      },
+      trader_ids: [...selected],
+    }),
+  );
+  c.append(rows, more, selection, generate);
+  root.append(c);
+}
+function renderRecommendationDiagnostics(root, data, callTool) {
+  const d = data.recommendation_diagnostics,
+    c = card("Why this plan is unavailable");
+  c.append(
+    row("Requested trader count", d.requested_basket_size),
+    row("Failure stage", d.stage),
+    row("Diagnostic ID", d.diagnostic_id),
+    el("p", d.count_semantics ?? "", "muted"),
+  );
+  for (const [label, key] of [
+    ["Source", "source_candidates"],
+    ["Matching market", "market_candidates"],
+    ["Fresh", "fresh_candidates"],
+    ["Qualified", "qualified_candidates"],
+    ["Matching assets", "asset_matching_candidates"],
+    ["Executable risk / mode", "eligible_candidates"],
+    ["Affordable at the requested count", "budget_eligible_candidates"],
+  ])
+    c.append(row(label, d[key]));
+  for (const a of d.adjustments ?? []) {
+    const b = el("button", a.label, "secondary");
+    b.addEventListener("click", () =>
+      callTool("recommend_traders", { preferences: a.preferences }),
+    );
+    c.append(b);
+  }
+  const details = el("details");
+  details.append(el("summary", "View exclusions and affected fields"));
+  for (const r of d.rules ?? [])
+    details.append(
+      el(
+        "p",
+        `${r.trader_id}: ${r.message} Field: ${r.field}. Current: ${JSON.stringify(r.current)}. Required: ${JSON.stringify(r.required)}.`,
+      ),
+    );
+  c.append(details);
+  root.append(c);
+}
+function renderAccountBalances(root, balances, callTool) {
+  const c = card("Your account balances"),
+    summary = balances.summary ?? {};
+  c.append(
+    row(
+      "Complete account total · USD",
+      summary.account_value_usd ?? "Unavailable · incomplete coverage",
+    ),
+    row("Verified subtotal · USD", summary.known_subtotal_usd),
+    el(
+      "p",
+      summary.basis ?? "Missing account data is unavailable, never zero.",
+      "muted",
+    ),
+  );
+  for (const [name, market] of Object.entries(balances.markets ?? {})) {
+    const section = card(
+      name === "perps"
+        ? "Perps · Stocks & Crypto"
+        : name === "prediction"
+          ? "Prediction"
+          : "Meme · independent wallet module",
+    );
+    section.append(
+      row("Availability", market.status === "ok" ? "Available" : market.status),
+      row("Account value · USD", market.account_value_usd),
+      row("Available trading collateral", usdc(market.available_trading_usdc)),
+      row("Occupied / reserved", usdc(market.occupied_or_reserved_usdc)),
+      row(
+        market.positions_value_basis?.includes("notional")
+          ? "Positions · gross notional, not account equity"
+          : "Position value · USD",
+        market.positions_value_usd,
+      ),
+      row(
+        "Source time",
+        market.observed_at ?? "Source does not supply a timestamp",
+      ),
+      row("Fetched at", market.fetched_at ?? balances.fetched_at),
+    );
+    if (market.cash_observed_at)
+      section.append(row("Cash source time", market.cash_observed_at));
+    if (market.known_subtotal_usd != null && market.account_value_usd == null)
+      section.append(
+        row("Verified partial value · USD", market.known_subtotal_usd),
+      );
+    if (
+      market.retained_wallet_cash_usdc != null &&
+      Number(market.retained_wallet_cash_usdc) > 0
+    )
+      section.append(
+        row("Retained-wallet cash", usdc(market.retained_wallet_cash_usdc)),
+        row("App display basis · USD", market.app_display_value_usd),
+        el("p", market.app_difference_reason, "muted"),
+      );
+    if (market.reason) section.append(el("p", market.reason, "muted"));
+    c.append(section);
+  }
+  const refresh = el("button", "Refresh all account balances", "secondary");
+  refresh.addEventListener("click", () => callTool("get_portfolio", {}));
+  c.append(refresh);
+  root.append(c);
+}
 function field(parent, label, type, value) {
   const wrap = el("label", label, "field");
   const input = el("input");
@@ -895,7 +1122,7 @@ function select(parent, label, options, value) {
   parent.append(wrap);
   return input;
 }
-function welcome(root, callTool, pref = {}) {
+function welcome(root, callTool, pref = {}, diagnostics) {
   root.append(
     el("h1", "Build your trader basket"),
     el(
@@ -926,32 +1153,56 @@ function welcome(root, callTool, pref = {}) {
     ],
     pref.market ?? "",
   );
-  const assets = field(
-    form,
-    "Perps assets · comma separated",
+  const assetGroup = el("fieldset");
+  assetGroup.append(el("legend", "Asset preference"));
+  const savedAssets = pref.assets ?? [],
+    savedCategory = pref.asset_category ?? "any",
+    savedAlt = pref.allow_altcoins ?? true;
+  const canonical = !savedAssets.length && savedAlt;
+  const specific = savedAssets.length && !savedAlt && savedCategory === "any";
+  const modes = [
+    ["any", "All assets · Crypto and RWA"],
+    ["crypto", "Crypto assets"],
+    ["rwa", "Stocks and other RWA"],
+    ["symbols", "Specific trading symbols"],
+  ];
+  if (!canonical && !specific)
+    modes.push([
+      "saved",
+      `Saved custom filter · ${savedCategory} · ${savedAssets.join(", ") || "no symbols"} · other assets ${savedAlt ? "allowed" : "excluded"}`,
+    ]);
+  const assetMode = select(
+    assetGroup,
+    "Asset preference",
+    modes,
+    canonical ? savedCategory : specific ? "symbols" : "saved",
+  );
+  const symbols = field(
+    assetGroup,
+    "Selected trading symbols · comma separated",
     "text",
-    (pref.assets ?? ["BTC", "ETH"]).join(","),
+    savedAssets.join(","),
   );
-  const alt = select(
+  const syncSymbols = () => {
+    symbols.parentElement.hidden = assetMode.value !== "symbols";
+  };
+  assetMode.addEventListener("change", syncSymbols);
+  syncSymbols();
+  assetGroup.append(
+    el(
+      "p",
+      "Default: all assets. Crypto/RWA classify Perps assets; the market selector is separate.",
+      "muted",
+    ),
+  );
+  form.append(assetGroup);
+  const size = field(
     form,
-    "Other Perps assets",
-    [
-      ["false", "Use listed assets only"],
-      ["true", "Allow other assets"],
-    ],
-    String(pref.allow_altcoins ?? false),
+    "Number of traders",
+    "number",
+    pref.portfolio_kind === "single" ? 1 : (pref.basket_size ?? 4),
   );
-  const kind = select(
-    form,
-    "Portfolio type",
-    [
-      ["basket", "Auto-Ride basket · 2–8 traders"],
-      ["single", "One trader"],
-    ],
-    pref.portfolio_kind ?? "basket",
-  );
-  const size = field(form, "Basket size", "number", pref.basket_size ?? 4);
-  size.min = "2";
+  size.min = "1";
   size.max = "8";
   const tolerance = select(
     form,
@@ -962,16 +1213,6 @@ function welcome(root, callTool, pref = {}) {
       ["high", "High"],
     ],
     pref.risk_tolerance ?? "medium",
-  );
-  const category = select(
-    form,
-    "Asset category",
-    [
-      ["crypto", "Crypto"],
-      ["rwa", "Stocks and other RWA"],
-      ["any", "No strong preference"],
-    ],
-    pref.asset_category ?? "crypto",
   );
   const mode = select(
     form,
@@ -1005,15 +1246,49 @@ function welcome(root, callTool, pref = {}) {
     pref.loss_policy ?? "pause_then_exit",
   );
   const b = el("button", "View traders first");
+  if (diagnostics) {
+    const targets = {
+      budget_usdc: budget,
+      basket_size: size,
+      market,
+      asset_category: assetMode,
+      assets: assetMode,
+      allow_altcoins: assetMode,
+      loss_trigger_pct: loss,
+      risk_tolerance: tolerance,
+      copy_mode: mode,
+    };
+    const seen = new Set();
+    for (const rule of diagnostics.rules ?? []) {
+      for (const name of rule.field.split("/")) {
+        const input = targets[name];
+        if (!input || seen.has(`${name}:${rule.rule}`)) continue;
+        seen.add(`${name}:${rule.rule}`);
+        input.parentElement.append(el("small", rule.message, "warning"));
+      }
+    }
+    if (diagnostics.blocker && diagnostics.feasible_basket_sizes?.length)
+      size.parentElement.append(
+        el(
+          "small",
+          `Feasible counts with these risk settings: ${diagnostics.feasible_basket_sizes.join(", ")}. Review an alternative before confirming.`,
+          "warning",
+        ),
+      );
+  }
   const validatePreferences = () => {
     b.disabled =
       !budget.value.trim() ||
       Number(budget.value) <= 0 ||
       Number(loss.value) < 1 ||
       Number(loss.value) > 100 ||
-      !market.value;
+      !market.value ||
+      !Number.isInteger(Number(size.value)) ||
+      Number(size.value) < 1 ||
+      Number(size.value) > 8 ||
+      (assetMode.value === "symbols" && !symbols.value.trim());
   };
-  for (const input of [budget, loss, market])
+  for (const input of [budget, loss, market, size, assetMode, symbols])
     input.addEventListener("input", validatePreferences);
   validatePreferences();
   b.addEventListener("click", () =>
@@ -1023,15 +1298,28 @@ function welcome(root, callTool, pref = {}) {
         budget_usdc: budget.value.trim(),
         loss_trigger_pct: Number(loss.value),
         market: market.value,
-        assets: assets.value
-          .split(",")
-          .map((v) => v.trim().toUpperCase())
-          .filter(Boolean),
-        allow_altcoins: alt.value === "true",
-        portfolio_kind: kind.value,
-        basket_size: kind.value === "single" ? 1 : Number(size.value),
+        ...(assetMode.value === "saved"
+          ? {
+              assets: savedAssets,
+              allow_altcoins: savedAlt,
+              asset_category: savedCategory,
+            }
+          : {
+              assets:
+                assetMode.value === "symbols"
+                  ? symbols.value
+                      .split(",")
+                      .map((v) => v.trim())
+                      .filter(Boolean)
+                  : [],
+              allow_altcoins: assetMode.value !== "symbols",
+              asset_category: ["crypto", "rwa"].includes(assetMode.value)
+                ? assetMode.value
+                : "any",
+            }),
+        portfolio_kind: Number(size.value) === 1 ? "single" : "basket",
+        basket_size: Number(size.value),
         risk_tolerance: tolerance.value,
-        asset_category: category.value,
         copy_mode: mode.value,
         ...(mode.value === "fixed"
           ? { fixed_margin_usdc: fixed.value.trim() }

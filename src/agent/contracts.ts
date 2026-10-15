@@ -31,8 +31,8 @@ export const preferences = z
     assets: z
       .array(z.string().regex(/^[A-Za-z][A-Za-z0-9:_-]{0,30}$/))
       .max(20)
-      .default(["BTC", "ETH"]),
-    allow_altcoins: z.boolean().default(false),
+      .default([]),
+    allow_altcoins: z.boolean().default(true),
     portfolio_kind: z.enum(["single", "basket"]).optional(),
     basket_size: z.number().int().min(1).max(8).optional(),
     risk_tolerance: z.enum(["low", "medium", "high"]).optional(),

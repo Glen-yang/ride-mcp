@@ -15,6 +15,7 @@ import {
   now,
   fresh,
   recommend,
+  assetAllowed,
   recommendedLeverage,
   eligibleCandidates,
   recommendationDiagnostics,
@@ -24,6 +25,7 @@ import {
   type Portfolio,
   type Sleeve,
   type Plan,
+  type Candidate,
 } from "./domain.js";
 import {
   Cursor,
@@ -43,7 +45,11 @@ import {
 } from "./conversational.js";
 import { depositView } from "./deposits.js";
 import { localDay } from "./analytics.js";
-import { preferenceCollection, completePreferences } from "./preferences.js";
+import {
+  preferenceCollection,
+  completePreferences,
+  normalizedAssetPreferences,
+} from "./preferences.js";
 import { FundingService } from "./funding.js";
 
 export class AgentService {
@@ -98,6 +104,7 @@ export class AgentService {
       return this.repository.transact(user, async (state) =>
         result({
           trader: c,
+          preferences: preferenceCollection(state).answers,
           saved_plan: state.portfolios.some((p) => p.state !== "closed")
             ? null
             : (state.plans.at(-1) ?? null),
@@ -117,8 +124,19 @@ export class AgentService {
         }
         const pref = completePreferences(s, answers)!;
         s.preferences = pref;
+        s.preference_asset_filter_version = 2;
         s.preference_draft = undefined;
-        const pool = await this.adapter.candidates();
+        let pool: Candidate[];
+        let sourceReadFailed = false;
+        try {
+          pool = await this.adapter.candidates();
+        } catch {
+          sourceReadFailed = true;
+          pool = [];
+        }
+        const planningPool = args.trader_ids
+          ? pool.filter((c) => (args.trader_ids as string[]).includes(c.id))
+          : pool;
         let displayedPool = eligibleCandidates(pref, pool);
         if (args.batch_action) {
           const hash = fingerprint(pref),
@@ -193,20 +211,34 @@ export class AgentService {
                 );
           plan.allocations.forEach(validateCopySettings);
         } catch (error) {
-          if (
-            !(error instanceof AgentError) ||
-            error.code !== "NO_EXECUTABLE_PLAN"
-          )
-            throw error;
-          const diagnostics = recommendationDiagnostics(pref, pool);
+          const diagnostics = recommendationDiagnostics(pref, planningPool);
           const sourceUnavailable = [
             "source_data_unavailable",
             "market_source_data_unavailable",
             "stale_source_scores",
-          ].includes(diagnostics.blocker);
+          ].includes(diagnostics.blocker ?? "");
+          if (sourceReadFailed) diagnostics.stage = "candidate_source_fetch";
+          const diagnosticCode =
+            error instanceof AgentError
+              ? error.code
+              : "RECOMMENDATION_SYSTEM_ERROR";
+          if (diagnosticCode !== "NO_EXECUTABLE_PLAN") {
+            diagnostics.stage = "plan_validation";
+            diagnostics.blocker = diagnosticCode;
+          }
+          console.warn(
+            JSON.stringify({
+              event: "recommendation_failed",
+              diagnostic_id: diagnostics.diagnostic_id,
+              stage: diagnostics.stage,
+              error_code: diagnosticCode,
+              blocker: diagnostics.blocker,
+              requested_count: diagnostics.requested_basket_size,
+            }),
+          );
           const message = sourceUnavailable
-            ? "Current trader score data is unavailable for this market. Your budget has not been identified as the cause. Retry after source data is refreshed; funding is not required for a preview."
-            : `A three-trader basket is unavailable under these preferences: ${diagnostics.blocker}. Review the returned filter counts before changing preferences.`;
+            ? "Current trader source data is unavailable. Funding is not required; retry when source data is refreshed."
+            : `The requested ${diagnostics.requested_basket_size}-trader plan could not be generated: ${diagnostics.blocker ?? diagnosticCode}. ${diagnostics.feasible_basket_sizes.length ? "Feasible trader counts: " + diagnostics.feasible_basket_sizes.join(", ") + ". Review an alternative without changing risk settings." : "Review the per-trader rules and affected fields below."} Diagnostic: ${diagnostics.diagnostic_id}.`;
           return {
             ...result(
               {
@@ -215,10 +247,25 @@ export class AgentService {
                 account: { authenticated: true, user_id: user },
                 candidates: eligibleCandidates(pref, pool),
                 recommendation_diagnostics: diagnostics,
+                candidate_limits: eligibleCandidates(pref, pool).map((c) => ({
+                  trader_id: c.id,
+                  leverage_cap: recommendedLeverage(pref, c),
+                })),
+                candidates_meta: {
+                  total: eligibleCandidates(pref, pool).length,
+                  returned: eligibleCandidates(pref, pool).length,
+                  has_more: false,
+                },
               },
               sourceUnavailable ? "stale" : "empty",
             ),
-            error: { code: error.code, message, retryable: sourceUnavailable },
+            error: {
+              code: diagnosticCode,
+              message,
+              retryable:
+                sourceUnavailable ||
+                diagnosticCode === "RECOMMENDATION_SYSTEM_ERROR",
+            },
           };
         }
         plan.allocations.forEach(validateCopySettings);
@@ -229,6 +276,24 @@ export class AgentService {
         return result(
           {
             plan,
+            preferences: pref,
+            recommendation_diagnostics: recommendationDiagnostics(
+              pref,
+              planningPool,
+            ),
+            market_coverage: {
+              requested: pref.market,
+              selected: [
+                ...new Set(plan.allocations.map((a) => a.trader.market)),
+              ],
+              meaning:
+                "Selected markets are the allowed search universe; a plan may use only one market.",
+            },
+            candidates_meta: {
+              total: eligibleCandidates(pref, pool).length,
+              returned: eligibleCandidates(pref, pool).length,
+              has_more: false,
+            },
             candidates: eligibleCandidates(pref, pool),
             candidate_limits: eligibleCandidates(pref, pool).map((c) => ({
               trader_id: c.id,
@@ -367,8 +432,10 @@ export class AgentService {
           );
         }
         s.preferences = completePreferences(s, args as any)!;
+        s.preference_asset_filter_version = 2;
         s.preference_draft = undefined;
         return result({
+          preference_saved: true,
           preferences: s.preferences,
           preference_collection: preferenceCollection(s),
           existing_portfolios_unchanged: true,
@@ -383,9 +450,16 @@ export class AgentService {
             false,
             404,
           );
+        const previousPreferences = normalizedAssetPreferences(
+          previous.preferences,
+          previous.asset_filter_version ?? 1,
+        );
         const pref = args.preferences
-          ? preferences.parse(args.preferences)
-          : previous.preferences;
+          ? completePreferences(s, {
+              ...previousPreferences,
+              ...(args.preferences as Partial<Preferences>),
+            })!
+          : previousPreferences;
         const requested = (args.allocations ??
           previous.allocations.map((x) => ({
             trader_id: x.trader.id,
@@ -1166,13 +1240,23 @@ export class AgentService {
     p: Portfolio,
     snapshot: NonNullable<Portfolio["snapshot"]>,
   ) {
-    if (p.preferences.asset_category === "rwa") {
+    if (
+      p.sleeves.some(
+        (s) =>
+          s.trader.asset_category === "rwa" ||
+          Object.values(s.trader.asset_categories ?? {}).includes("rwa"),
+      )
+    ) {
       const required = new Map<string, ReturnType<typeof D>>();
       for (const sleeve of p.sleeves) {
         const scopes = [
           ...new Set(
             sleeve.trader.assets
-              .filter((a) => sleeve.trader.asset_categories?.[a] === "rwa")
+              .filter(
+                (a) =>
+                  (sleeve.trader.asset_categories?.[a] ??
+                    sleeve.trader.asset_category) === "rwa",
+              )
               .map((a) => (a.includes(":") ? a.split(":")[0] : "core")),
           ),
         ];
@@ -1194,7 +1278,11 @@ export class AgentService {
     const rows = await Promise.all(
       plan.allocations.map((a) => this.adapter.profile(a.trader.id)),
     );
-    const allowed = eligibleCandidates(plan.preferences, rows);
+    const allowed = eligibleCandidates(
+      plan.preferences,
+      rows,
+      plan.asset_filter_version ?? 1,
+    );
     if (
       allowed.length !== plan.allocations.length ||
       plan.allocations.some(
@@ -1279,7 +1367,11 @@ export class AgentService {
         );
         const replacementCap = recommendedLeverage(p.preferences, trader);
         if (
-          !eligibleCandidates(p.preferences, [trader]).length ||
+          !eligibleCandidates(
+            p.preferences,
+            [trader],
+            p.asset_filter_version ?? 1,
+          ).length ||
           replacementCap == null
         )
           throw new AgentError(
@@ -1292,10 +1384,13 @@ export class AgentService {
           (p.preferences.market !== "both" &&
             trader.market !== p.preferences.market) ||
           (trader.market === "perps" &&
-            !trader.assets.every(
-              (a) =>
-                p.preferences.assets.includes(a) ||
-                p.preferences.allow_altcoins,
+            !trader.assets.every((a) =>
+              assetAllowed(
+                p.preferences,
+                a,
+                trader.asset_categories?.[a] ?? trader.asset_category,
+                p.asset_filter_version ?? 1,
+              ),
             ))
         )
           throw new AgentError(
@@ -1463,6 +1558,7 @@ export function fromPlan(plan: Plan, id = uid("portfolio")): Portfolio {
     revision: 0,
     state: "activating",
     preferences: plan.preferences,
+    asset_filter_version: plan.asset_filter_version,
     sleeves: plan.allocations.map((a) => ({
       ...a,
       state: "active",

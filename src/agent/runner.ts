@@ -12,6 +12,7 @@ import {
   type Portfolio,
   type Execution,
   type Sleeve,
+  assetAllowed,
 } from "./domain.js";
 import {
   applyFill,
@@ -361,11 +362,15 @@ export class AgentRunner {
             const permitted = source.positions.filter(
               (x) =>
                 x.market === "prediction" ||
-                (p.preferences.asset_category === "rwa"
-                  ? s.trader.asset_categories?.[x.asset] === "rwa"
-                  : p.preferences.asset_category === "any" ||
-                    p.preferences.allow_altcoins ||
-                    p.preferences.assets.includes(x.asset)),
+                assetAllowed(
+                  p.preferences,
+                  x.asset,
+                  s.trader.asset_categories?.[x.asset] ??
+                    (p.asset_filter_version === 2
+                      ? s.trader.asset_category
+                      : undefined),
+                  p.asset_filter_version ?? 1,
+                ),
             );
             const activeKeys = new Set(
               permitted

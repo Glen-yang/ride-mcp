@@ -1,3 +1,5 @@
+import { readAccountBalances } from "./account_balances.js";
+import { D } from "./agent/domain.js";
 import { z } from "zod";
 import { AgentError, result, type Result } from "./agent/contracts.js";
 
@@ -175,55 +177,81 @@ export async function invokeAccountRead(
 ): Promise<Result> {
   if (name === "get_my_copies")
     return readAccountCopies(graphqlUrl, token, args, fetcher);
-  const portfolio = await invokePortfolio();
-  if (portfolio.error) return portfolio;
-  try {
-    const app = await readAccountCopies(graphqlUrl, token, {}, fetcher);
-    const perps = app.data.perps as {
-      configs: unknown[];
-      positions: unknown[];
-    };
-    const prediction = app.data.prediction as {
-      configs: unknown[];
-      positions: unknown[];
-    };
-    const hasAppCopies =
-      perps.configs.length +
-        perps.positions.length +
-        prediction.configs.length +
-        prediction.positions.length >
-      0;
-    return result(
-      {
-        ...portfolio.data,
-        account: app.data.account,
-        query_scope: "agent_portfolio_and_ride_app",
-        agent_portfolio_status: portfolio.status,
-        app_copies: app.data,
+  const reads = await Promise.allSettled([
+    invokePortfolio(),
+    readAccountCopies(graphqlUrl, token, {}, fetcher),
+    readAccountBalances(graphqlUrl, token, fetcher),
+  ]);
+  const portfolio =
+    reads[0].status === "fulfilled"
+      ? reads[0].value
+      : result({ portfolio: null }, "stale", [
+          "Agent portfolio read is unavailable; App accounts are read separately.",
+        ]);
+  const app = reads[1].status === "fulfilled" ? reads[1].value : null;
+  const balances = reads[2].status === "fulfilled" ? reads[2].value : null;
+  const hasAppCopies = app
+    ? [app.data.perps, app.data.prediction].some(
+        (m: any) => (m?.configs?.length ?? 0) + (m?.positions?.length ?? 0) > 0,
+      )
+    : false;
+  const partial =
+    !app ||
+    app.status === "stale" ||
+    !balances ||
+    !balances.summary.coverage_complete;
+  return result(
+    {
+      ...portfolio.data,
+      account: balances?.account ??
+        app?.data.account ?? { authenticated: true },
+      query_scope: "agent_portfolio_and_ride_app",
+      agent_portfolio_status: portfolio.status,
+      account_coverage_status: partial ? "partial" : "complete",
+      app_copies: app?.data ?? {
+        coverage_complete: false,
+        status: "unavailable",
       },
-      app.status === "stale"
+      account_balances: balances ?? {
+        summary: {
+          coverage_complete: false,
+          account_value_usd: null,
+          known_subtotal_usd: null,
+        },
+        markets: Object.fromEntries(
+          ["perps", "prediction", "meme"].map((m) => [
+            m,
+            {
+              status: "unavailable",
+              account_value_usd: null,
+              available_trading_usdc: null,
+              reason:
+                "Authenticated balance source unavailable; retry without treating it as zero.",
+            },
+          ]),
+        ),
+      },
+    },
+    !["ok", "empty", "stale"].includes(portfolio.status)
+      ? portfolio.status
+      : partial
         ? "stale"
-        : portfolio.status === "empty" && hasAppCopies
+        : portfolio.status === "empty" &&
+            (hasAppCopies || D(balances?.summary.known_subtotal_usd ?? 0).gt(0))
           ? "ok"
           : portfolio.status,
-      [...portfolio.warnings, ...app.warnings],
-    );
-  } catch {
-    return result(
-      {
-        ...portfolio.data,
-        account: { authenticated: true },
-        query_scope: "agent_portfolio_and_ride_app",
-        agent_portfolio_status: portfolio.status,
-        app_copies: { coverage_complete: false, status: "unavailable" },
-      },
-      "stale",
-      [
-        ...portfolio.warnings,
+    [
+      ...portfolio.warnings,
+      ...(app?.warnings ?? [
         "Signed in. Ride App copies could not be read; retry the query without repeating login.",
-      ],
-    );
-  }
+      ]),
+      ...(balances
+        ? [
+            "Overall account total is unavailable until every module is covered. Meme valuation is unavailable through this API; copy allocation remaining is not account balance.",
+          ]
+        : ["Account balances are unavailable; no missing source is zero."]),
+    ],
+  );
 }
 
 function maskAddresses(value: unknown): unknown {

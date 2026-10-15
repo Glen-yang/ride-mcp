@@ -51,6 +51,7 @@ export interface HoldingCheckpoint {
   quantities: Record<string, string>;
 }
 export interface State {
+  preference_asset_filter_version?: 2;
   preferences: Preferences | null;
   preference_draft?: Partial<Preferences>;
   recommendation_batches?: {

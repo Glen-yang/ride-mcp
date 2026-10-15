@@ -152,9 +152,34 @@ it("shows existing App holdings even when the Agent has only an empty portfolio"
     async () => result({ portfolio: null }, "empty"),
     fixtureFetch(),
   );
-  assert.equal(value.status, "ok");
+  assert.equal(value.status, "stale"); // Copy inventory is complete; balance APIs are absent from this fixture.
   assert.equal(value.data.portfolio, null);
   assert.equal(value.data.agent_portfolio_status, "empty");
   assert.equal((value.data.account as any).authenticated, true);
   assert.equal((value.data.app_copies as any).perps.positions.length, 1);
+});
+
+it("keeps authoritative execution states even when account balance coverage is partial", async () => {
+  for (const status of [
+    "uncertain",
+    "partially_filled",
+    "executing",
+    "settling",
+  ] as const) {
+    const value = await invokeAccountRead(
+      "get_portfolio",
+      {},
+      "fixture-session",
+      "https://core.test/graphql",
+      async () => result({ portfolio: { id: "owned" } }, status),
+      fixtureFetch(),
+    );
+    assert.equal(value.status, status);
+    assert.equal(value.data.agent_portfolio_status, status);
+    assert.equal(value.data.account_coverage_status, "partial");
+    assert.equal(
+      (value.data.account_balances as any).summary.account_value_usd,
+      null,
+    );
+  }
 });

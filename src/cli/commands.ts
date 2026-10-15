@@ -327,6 +327,39 @@ function print(value: Result, pretty: boolean): void {
     return;
   }
   console.log(`Ride · ${value.status} · ${value.as_of}`);
+  const data = value.data as any;
+  if (Array.isArray(data.candidates)) {
+    console.log(
+      `Eligible candidates: ${data.candidates.length} returned / ${data.candidates_meta?.total ?? data.candidates.length} total`,
+    );
+    console.table(
+      data.candidates.map((c: any) => ({
+        trader: c.handle,
+        id: c.id,
+        score: c.score,
+        market: c.market,
+        assets: c.assets.join(", "),
+        eligibility: c.eligibility,
+      })),
+    );
+  }
+  if (data.account_balances) {
+    const b = data.account_balances;
+    console.log(
+      `Account total: ${b.summary.account_value_usd ?? "unavailable"} USD · verified subtotal: ${b.summary.known_subtotal_usd ?? "unavailable"} USD`,
+    );
+    console.table(
+      Object.entries(b.markets).map(([market, m]: [string, any]) => ({
+        market,
+        status: m.status,
+        equity_USD: m.account_value_usd ?? "unavailable",
+        trading_USDC: m.available_trading_usdc ?? "unavailable",
+        reserved_USDC: m.occupied_or_reserved_usdc ?? "unavailable",
+        positions_USD: m.positions_value_usd ?? "unavailable",
+        fetched_at: m.fetched_at,
+      })),
+    );
+  }
   if (value.error) {
     console.log(`${value.error.code}: ${value.error.message}`);
     if (value.data.recommendation_diagnostics)
@@ -335,7 +368,6 @@ function print(value: Result, pretty: boolean): void {
       );
     return;
   }
-  const data = value.data as any;
   if (data.account?.authenticated)
     console.log(`Signed in: ${data.account.display_name ?? "Ride user"}`);
   const app =

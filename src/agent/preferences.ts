@@ -18,15 +18,35 @@ const questions = {
   },
 };
 
+// Old approved 'any' and RWA plans ignored the symbol fields. Canonicalize
+// those fields when editing a copy; never reinterpret a running old portfolio.
+export function normalizedAssetPreferences<T extends Partial<Preferences>>(
+  value: T,
+  version = 2,
+): T {
+  return version !== 2 && ["any", "rwa"].includes(value.asset_category ?? "")
+    ? { ...value, assets: [], allow_altcoins: true }
+    : value;
+}
+
 export function preferenceCollection(
   s: State,
   answers: Partial<Preferences> = {},
 ) {
+  const previous =
+    s.preferences ??
+    s.plans.at(-1)?.preferences ??
+    s.portfolios.find((p) => p.state !== "closed")?.preferences ??
+    {};
+  const previousVersion = s.preferences
+    ? s.preference_asset_filter_version
+    : (s.plans.at(-1)?.asset_filter_version ??
+      s.portfolios.find((p) => p.state !== "closed")?.asset_filter_version);
   const saved = {
-    ...(s.preferences ??
-      s.plans.at(-1)?.preferences ??
-      s.portfolios.find((p) => p.state !== "closed")?.preferences ??
-      {}),
+    assets: [] as string[],
+    allow_altcoins: true,
+    asset_category: "any" as const,
+    ...normalizedAssetPreferences(previous, previousVersion ?? 1),
     ...(s.preference_draft ?? {}),
     ...answers,
   };
@@ -42,6 +62,7 @@ export function preferenceCollection(
     answers: saved,
     missing_fields: missing,
     questions: missing.map((field) => ({ field, ...questions[field] })),
+    defaults: { assets: [], allow_altcoins: true, asset_category: "any" },
     optional_choices: {
       risk_tolerance: ["low", "medium", "high"],
       portfolio_kind: ["single", "basket"],

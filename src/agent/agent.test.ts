@@ -98,12 +98,14 @@ describe("financial invariants", () => {
       inputs.set_preferences.parse({ ...pref, budget_usdc: "0.0000001" }),
     );
   });
-  it("refuses stale, small and single-market candidates for both markets", () => {
+  it("refuses stale and insufficient-budget candidates while both allows either market", () => {
     assert.throws(() =>
       recommend({ ...pref, budget_usdc: "20" }, [1, 2, 3].map(candidate)),
     );
-    assert.throws(() =>
-      recommend({ ...pref, market: "both" }, [1, 2, 3, 4].map(candidate)),
+    assert.equal(
+      recommend({ ...pref, market: "both" }, [1, 2, 3, 4].map(candidate))
+        .allocations.length,
+      4,
     );
     assert.throws(() =>
       recommend(

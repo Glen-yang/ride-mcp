@@ -577,6 +577,8 @@ it("RWA is independently filtered and requires its own DEX collateral at proposa
         portfolio_kind: "single",
         basket_size: 1,
         asset_category: "rwa",
+        assets: [],
+        allow_altcoins: true,
       },
     }),
     plan = response.data.plan as any;
