@@ -120,6 +120,55 @@ const abi = new Interface([
   "event Transfer(address indexed from,address indexed to,uint256 value)",
   "event TransferSingle(address indexed operator,address indexed from,address indexed to,uint256 id,uint256 value)",
 ]);
+it("considers partially shared Prediction topics when recommending a diversified basket", () => {
+  const pool = [
+    {
+      ...candidate(1),
+      market: "prediction" as const,
+      score: 95.44,
+      assets: ["SPORTS", "POLITICS"],
+      style: "Sports",
+      venue_max_leverage: 1,
+    },
+    {
+      ...candidate(2),
+      market: "prediction" as const,
+      score: 95.05,
+      assets: ["ECONOMICS", "SPORTS"],
+      style: "Economics",
+      venue_max_leverage: 1,
+    },
+    {
+      ...candidate(3),
+      market: "prediction" as const,
+      score: 93.46,
+      assets: ["CRYPTO"],
+      style: "Crypto",
+      venue_max_leverage: 1,
+    },
+  ];
+  const plan = recommend(
+    {
+      budget_usdc: "100",
+      loss_trigger_pct: 20,
+      market: "prediction",
+      assets: [],
+      allow_altcoins: true,
+      portfolio_kind: "basket",
+      basket_size: 2,
+    },
+    pool,
+  );
+  assert.deepEqual(
+    plan.allocations.map((a) => a.trader.id),
+    [pool[0].id, pool[2].id],
+  );
+  assert(
+    plan.allocations.every(
+      (a) => a.amount_usdc === "50.000000" && a.leverage_cap === 1,
+    ),
+  );
+});
 const p = () =>
   fromPlan(
     recommend(

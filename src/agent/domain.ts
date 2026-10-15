@@ -38,6 +38,14 @@ export interface Candidate {
     cashflow_adjusted: boolean;
     flow_timing: string;
     reconciliation_difference_pct: number;
+    inventory_start_block?: number;
+    inventory_end_block?: number;
+    inventory_end_block_hash?: string;
+    token_count?: number;
+    transfer_count?: number;
+    max_price_age_seconds?: number;
+    price_bucket_seconds?: number;
+    fallback_price_sources?: string[];
   };
   metric_unavailable_reason?: string;
   id: string;
@@ -686,11 +694,19 @@ function diversity(c: Candidate, chosen: Candidate[]): number {
         n +
         (x.style === c.style ? 8 : 0) +
         (x.direction === c.direction ? 5 : 0) +
-        (x.assets.join(",") === c.assets.join(",") ? 6 : 0) +
+        6 * assetOverlap(x.assets, c.assets) +
         (x.market === c.market ? 2 : 0),
       0,
     )
   );
+}
+function assetOverlap(a: string[], b: string[]) {
+  const left = new Set(a.map((asset) => asset.toUpperCase())),
+    right = new Set(b.map((asset) => asset.toUpperCase()));
+  const union = new Set([...left, ...right]);
+  return union.size
+    ? [...left].filter((asset) => right.has(asset)).length / union.size
+    : 0;
 }
 export function aggregate(
   p: Portfolio,

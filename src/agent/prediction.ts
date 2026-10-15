@@ -2,6 +2,7 @@ import pg from "pg";
 import { JsonRpcProvider, Contract, Interface } from "ethers";
 import { AgentError } from "./contracts.js";
 import { PredictionHistory } from "./prediction_history.js";
+import { PredictionEquityHistory } from "./prediction_equity_history.js";
 import {
   D,
   cash,
@@ -32,16 +33,43 @@ interface Outcome {
 export class PredictionVenue {
   private rpc: JsonRpcProvider | null = null;
   private poolCache: { at: number; rows: any[] } | null = null;
-  private history = new PredictionHistory();
+  private history: PredictionHistory;
   constructor(
     private pool: pg.Pool,
     private core: Core,
     private salt: string,
     private rpcUrl?: string,
-  ) {}
+  ) {
+    this.history = new PredictionHistory(
+      rpcUrl
+        ? {
+            loader: new PredictionEquityHistory(rpcUrl, () =>
+              this.core("prediction_contracts", {}),
+            ),
+            key: (wallet) => this.id(wallet),
+            read: async (key) =>
+              (
+                await this.pool.query(
+                  "SELECT value FROM ride_agent_prediction_history WHERE key=$1",
+                  [key],
+                )
+              ).rows[0]?.value ?? null,
+            write: async (key, record) => {
+              await this.pool.query(
+                "INSERT INTO ride_agent_prediction_history(key,value) VALUES($1,$2) ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value",
+                [key, record],
+              );
+            },
+          }
+        : undefined,
+    );
+  }
   async migrate() {
     await this.pool.query(
       "CREATE TABLE IF NOT EXISTS ride_agent_prediction_outcomes (key TEXT PRIMARY KEY, value JSONB NOT NULL)",
+    );
+    await this.pool.query(
+      "CREATE TABLE IF NOT EXISTS ride_agent_prediction_history (key TEXT PRIMARY KEY, value JSONB NOT NULL)",
     );
   }
   private provider() {
