@@ -1,5 +1,7 @@
 # Preferences and trading-account funding · 0.4.2
 
+Historical release reference. Budget/risk-first onboarding and candidate browsing now follow [conversation-v050.md](conversation-v050.md); old upfront-field and batch-quota rules below are superseded.
+
 Recommendations return structured missing questions before reading candidates. `get_preferences` reads saved/partial answers; `set_preferences` merges supplied answers and returns remaining questions. Budget, acceptable loss and market are required; explicit basket/Fixed choices require their size/entry amount. Existing answers and portfolios are retained; older saved previews also restore preferences when their separate preference record was empty. The card starts with empty budget/loss and an unselected market. AI instructions forbid invented values.
 
 `get_deposit_address` and `check_deposit_status` distinguish receiving-wallet USDC from verified trading collateral. `prepare_deposit` freezes an exact amount and owned account, returns a human confirmation URL, and moves no funds. The browser can review a changed amount, then separately confirm funding and any required account activation. Embedded owners sign the existing Core Permit/approveAgent challenges; server-master owners explicitly confirm the existing Core relayer operation. Signatures/challenges are absent from MCP output. All confirmation requests use authenticated Core identity and browser CSRF; no machine confirmation tool is registered.

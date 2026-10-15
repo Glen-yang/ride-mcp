@@ -30,6 +30,7 @@ export const fresh = (at: number, ttl = 30_000) =>
   Number.isFinite(at) && at <= now() + 1000 && now() - at <= ttl;
 export type Venue = "perps" | "prediction";
 export interface Candidate {
+  metric_window?: { start_at: number; end_at: number; basis: string };
   id: string;
   handle: string;
   market: Venue;
@@ -66,6 +67,9 @@ export interface Allocation {
   emergency_exit_pct?: number;
 }
 export interface Plan {
+  preference_sources?: Partial<
+    Record<keyof Preferences, "user" | "default" | "recommended">
+  >;
   asset_filter_version?: 2;
   id: string;
   created_at: number;

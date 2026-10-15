@@ -119,14 +119,12 @@ it("returns only missing preference questions without reading candidate data, pr
   assert.equal(reads, 0);
   assert.deepEqual((first.data.preference_collection as any).missing_fields, [
     "budget_usdc",
-    "loss_trigger_pct",
-    "market",
+    "risk_tolerance",
   ]);
   await f.api.tool("alice", "set_preferences", { budget_usdc: "500" });
   const partial = await f.api.tool("alice", "get_preferences", {});
   assert.deepEqual((partial.data.preference_collection as any).missing_fields, [
-    "loss_trigger_pct",
-    "market",
+    "risk_tolerance",
   ]);
   await f.api.tool("alice", "set_preferences", {
     loss_trigger_pct: 25,
@@ -146,7 +144,7 @@ it("returns only missing preference questions without reading candidate data, pr
   );
   assert.equal(reads, 0);
 });
-it("asks conditional Fixed and basket questions without inventing their values", async () => {
+it("asks only the conditional Fixed amount and does not require an upfront basket count", async () => {
   const f = fixture();
   const out = await f.api.tool("alice", "set_preferences", {
     budget_usdc: "500",
@@ -156,7 +154,6 @@ it("asks conditional Fixed and basket questions without inventing their values",
     copy_mode: "fixed",
   });
   assert.deepEqual((out.data.preference_collection as any).missing_fields, [
-    "basket_size",
     "fixed_margin_usdc",
   ]);
 });

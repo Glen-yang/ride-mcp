@@ -1,0 +1,248 @@
+import { AgentError, type Preferences } from "./contracts.js";
+import {
+  recommend,
+  eligibleCandidates,
+  fingerprint,
+  now,
+  uid,
+  cash,
+  D,
+  type Candidate,
+  type Plan,
+} from "./domain.js";
+import { compatibility } from "./conversational.js";
+import type { State, Cursor } from "./repository.js";
+
+export function choosePlanPreferences(
+  p: Preferences,
+  pool: Candidate[],
+  selected?: string[],
+): Preferences {
+  if (selected)
+    return {
+      ...p,
+      portfolio_kind: selected.length === 1 ? "single" : "basket",
+      basket_size: selected.length,
+    };
+  if (p.portfolio_kind === "single" || p.basket_size != null)
+    return {
+      ...p,
+      portfolio_kind:
+        p.portfolio_kind === "single" || p.basket_size === 1
+          ? "single"
+          : "basket",
+    };
+  // Prefer up to four feasible sleeves. This is a disclosed suggestion, never a minimum count.
+  for (let count = 4; count >= 1; count--) {
+    const trial: Preferences = {
+      ...p,
+      portfolio_kind: count === 1 ? "single" : "basket",
+      basket_size: count,
+    };
+    try {
+      recommend(trial, pool);
+      return trial;
+    } catch (e) {
+      if (!(e instanceof AgentError) || e.code !== "NO_EXECUTABLE_PLAN")
+        throw e;
+    }
+  }
+  return { ...p, portfolio_kind: "single", basket_size: 1 };
+}
+
+export function saveDiscovery(s: State, pref: Preferences, pool: Candidate[]) {
+  const at = now();
+  s.discovery = {
+    id: uid("discovery"),
+    preference_hash: fingerprint(pref),
+    created_at: at,
+    expires_at: Math.min(
+      at + 5 * 60_000,
+      ...pool.filter((c) => c.expires_at > at).map((c) => c.expires_at),
+    ),
+    candidates: pool,
+  };
+}
+export function traderRow(c: Candidate) {
+  return {
+    trader_id: c.id,
+    nickname: c.handle,
+    market: c.market,
+    score: c.score,
+    score_version: c.score_version,
+    assets: c.assets,
+    style: c.style,
+    historical_roi_pct: c.source_roi_pct,
+    historical_drawdown_pct: c.source_drawdown_pct,
+    metric_window: c.metric_window ?? null,
+    eligibility: c.eligibility,
+    scored_at: c.scored_at,
+  };
+}
+export function browse(
+  s: State,
+  pref: Preferences,
+  args: {
+    sort_by?: "score" | "drawdown" | "roi";
+    direction?: "asc" | "desc";
+    limit?: number;
+    cursor?: string;
+    compare_ids?: string[];
+  },
+  user: string,
+  cursor: Cursor,
+) {
+  const snapshot = s.discovery;
+  if (
+    !snapshot ||
+    snapshot.expires_at <= now() ||
+    snapshot.preference_hash !== fingerprint(pref)
+  )
+    throw new AgentError(
+      "DISCOVERY_REFRESH_REQUIRED",
+      "The candidate snapshot expired or preferences changed. Call recommend_traders to refresh; your choices and saved plan remain available.",
+      true,
+    );
+  const sort = args.sort_by ?? "score",
+    direction = args.direction ?? (sort === "drawdown" ? "asc" : "desc");
+  const query = fingerprint({
+    snapshot: snapshot.id,
+    sort,
+    direction,
+    compare_ids: args.compare_ids,
+  });
+  const decoded = args.cursor ? cursor.decode(user, args.cursor) : null;
+  if (decoded && (decoded.id !== query || decoded.at < 0))
+    throw new AgentError(
+      "INVALID_CURSOR",
+      "Restart this sort or comparison without a cursor; the saved plan is unchanged.",
+    );
+  const allowed = eligibleCandidates(pref, snapshot.candidates);
+  const ids = args.compare_ids;
+  const rows = ids
+    ? snapshot.candidates.filter((c) => ids.includes(c.id))
+    : allowed;
+  const metric = (c: Candidate) =>
+    sort === "score"
+      ? c.score
+      : sort === "drawdown"
+        ? c.source_drawdown_pct
+        : c.source_roi_pct;
+  rows.sort((a, b) => {
+    const av = metric(a),
+      bv = metric(b);
+    if (av == null && bv == null) return a.id.localeCompare(b.id);
+    if (av == null) return 1;
+    if (bv == null) return -1;
+    return (
+      (direction === "asc" ? av - bv : bv - av) || a.id.localeCompare(b.id)
+    );
+  });
+  const offset = decoded?.at ?? 0,
+    limit = args.limit ?? 5,
+    page = rows.slice(offset, offset + limit);
+  const next = offset + page.length;
+  return {
+    candidates: page,
+    candidate_table: page.map(traderRow),
+    candidates_meta: {
+      total: rows.length,
+      returned: page.length,
+      offset,
+      has_more: next < rows.length,
+      next_cursor: next < rows.length ? cursor.encode(user, next, query) : null,
+      sort_by: sort,
+      direction,
+      snapshot_at: snapshot.created_at,
+      expires_at: snapshot.expires_at,
+      scope:
+        "Entire current verified source pool, not just this page. The production Perps source profiles at most the top 30 by Copy Score; this is not all market traders.",
+      historical_metric_note:
+        "Source history is not follower profit. Compare periods and score versions before drawing conclusions; unknown periods are unavailable, never assumed equal.",
+      period_comparable:
+        page.length > 0 &&
+        page.every((c) => c.metric_window != null) &&
+        new Set(page.map((c) => fingerprint(c.metric_window))).size === 1,
+    },
+    missing_trader_ids:
+      ids?.filter((id) => !rows.some((c) => c.id === id)) ?? [],
+    selected_trader_ids: s.selected_trader_ids ?? [],
+    saved_plan_id: s.plans.at(-1)?.id ?? null,
+    plan_unchanged: true,
+    comparison: ids
+      ? {
+          rows: page.map((c) => ({
+            ...traderRow(c),
+            matches_preferences: allowed.some((a) => a.id === c.id),
+          })),
+          overlaps: compatibility({
+            allocations: rows.map((c) => ({ trader: c, amount_usdc: "1" })),
+          } as Plan).pairs,
+          historical_loss_correlation: null,
+        }
+      : null,
+  };
+}
+export function conversationView(
+  plan: Plan | null,
+  collection: Record<string, unknown>,
+  candidates: Candidate[],
+  selectedByUser: boolean,
+) {
+  return {
+    presentation: "native_conversation",
+    preference_collection: collection,
+    recommended_portfolio:
+      plan?.allocations.map((a) => ({
+        ...traderRow(a.trader),
+        amount_usdc: a.amount_usdc,
+        reason: `Copy Score ${a.trader.score}; ${a.trader.style}; ${a.trader.assets.join("/")}; ${plan.allocations.length === 1 ? "single-trader concentration" : `capital spread across ${plan.allocations.length} selected traders`}.`,
+      })) ?? [],
+    candidate_table: candidates.slice(0, 5).map(traderRow),
+    selection_origin: selectedByUser ? "user" : "system_recommendation",
+    planning_constraints: {
+      max_traders: 8,
+      minimum_allocation_usdc: "50",
+      type: "Ride Agent product allocation minimum; venue minimums also apply",
+      leverage_mode: "cap",
+      follow_source_leverage_supported: false,
+    },
+    final_review: plan
+      ? {
+          budget_usdc: plan.preferences.budget_usdc,
+          allocated_usdc: cash(
+            plan.allocations.reduce((n, a) => n.plus(a.amount_usdc), D(0)),
+          ),
+          unallocated_usdc: cash(
+            D(plan.preferences.budget_usdc).minus(
+              plan.allocations.reduce((n, a) => n.plus(a.amount_usdc), D(0)),
+            ),
+          ),
+          market: plan.preferences.market,
+          selected_markets: [
+            ...new Set(plan.allocations.map((a) => a.trader.market)),
+          ],
+          portfolio_loss_trigger_pct: plan.preferences.loss_trigger_pct,
+          portfolio_loss_trigger_usdc: cash(
+            D(plan.preferences.budget_usdc)
+              .times(plan.preferences.loss_trigger_pct)
+              .div(100),
+          ),
+          traders: plan.allocations.map((a) => ({
+            trader_id: a.trader.id,
+            amount_usdc: a.amount_usdc,
+            copy_mode: a.copy_mode ?? "ride_recommends",
+            leverage_cap: a.leverage_cap,
+            stop_loss_pct: a.stop_loss_pct,
+            loss_policy: a.loss_policy ?? "exit",
+            emergency_exit_pct: a.emergency_exit_pct ?? null,
+          })),
+          funds_verified: false,
+          execution_authorized: false,
+          requires_ride_confirmation: true,
+        }
+      : null,
+    instruction:
+      "Show two compact chat tables: recommended portfolio (trader, amount, reason) and top 5 candidates (ID, score, assets, style, history). Disclose defaults and suggested risk settings. Offer accept/customize; browse_traders pages or compares without replacing the plan. No funding needed for this preview. Missing history is unavailable. Best means prioritized within current conditions, not highest guaranteed returns.",
+  };
+}

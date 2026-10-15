@@ -49,7 +49,14 @@ import {
   preferenceCollection,
   completePreferences,
   normalizedAssetPreferences,
+  savePreferenceCollection,
 } from "./preferences.js";
+import {
+  browse,
+  choosePlanPreferences,
+  saveDiscovery,
+  conversationView,
+} from "./discovery.js";
 import { FundingService } from "./funding.js";
 
 export class AgentService {
@@ -111,21 +118,35 @@ export class AgentService {
         }),
       );
     }
+    if (name === "browse_traders") {
+      return this.repository.transact(user, async (s) => {
+        const pref = completePreferences(s);
+        if (!pref)
+          return result(
+            { preference_collection: preferenceCollection(s) },
+            "requires_preferences",
+          );
+        if (!s.discovery && !args.cursor)
+          saveDiscovery(s, pref, await this.adapter.candidates());
+        return result(browse(s, pref, args as any, user, this.cursor));
+      });
+    }
     if (name === "recommend_traders") {
       return this.repository.transact(user, async (s) => {
         const answers = (args.preferences ?? {}) as any;
         const collection = preferenceCollection(s, answers);
+        savePreferenceCollection(s, collection);
         if (!collection.ready) {
-          s.preference_draft = collection.answers;
           return result(
             { preference_collection: collection },
             "requires_preferences",
           );
         }
-        const pref = completePreferences(s, answers)!;
-        s.preferences = pref;
-        s.preference_asset_filter_version = 2;
-        s.preference_draft = undefined;
+        const savedPref = s.preferences!;
+        if (args.selection === "system") s.selected_trader_ids = undefined;
+        if (args.trader_ids)
+          s.selected_trader_ids = [...new Set(args.trader_ids as string[])];
+        const selectedIds = s.selected_trader_ids;
         let pool: Candidate[];
         let sourceReadFailed = false;
         try {
@@ -134,9 +155,20 @@ export class AgentService {
           sourceReadFailed = true;
           pool = [];
         }
-        const planningPool = args.trader_ids
-          ? pool.filter((c) => (args.trader_ids as string[]).includes(c.id))
+        const planningPool = selectedIds
+          ? pool.filter((c) => selectedIds.includes(c.id))
           : pool;
+        const pref = choosePlanPreferences(
+          savedPref,
+          planningPool,
+          selectedIds,
+        );
+        saveDiscovery(s, savedPref, pool);
+        const candidatePage =
+          s.discovery!.expires_at > now()
+            ? browse(s, savedPref, { limit: 5 }, user, this.cursor)
+                .candidates_meta
+            : null;
         let displayedPool = eligibleCandidates(pref, pool);
         if (args.batch_action) {
           const hash = fingerprint(pref),
@@ -156,15 +188,9 @@ export class AgentService {
           if (batches.preference_hash !== hash)
             throw new AgentError(
               "PREFERENCES_CHANGED",
-              "Refresh the first batch with the current preferences; the free change quota is retained.",
+              "Refresh the first page with the current preferences.",
             );
           if (args.batch_action === "next") {
-            const active = s.portfolios.some((p) => p.state !== "closed");
-            if (batches.change_used && !active)
-              throw new AgentError(
-                "BATCH_LIMIT",
-                "The one free batch change was used. Compare the two saved batches or edit your basket.",
-              );
             const excluded = new Set(batches.batches.flat());
             const next = displayedPool
               .filter((c) => !excluded.has(c.id))
@@ -175,9 +201,9 @@ export class AgentService {
                 "No additional fresh eligible traders are available.",
                 true,
               );
-            batches.batches[1] = next.map((c) => c.id);
+            batches.batches.push(next.map((c) => c.id));
             batches.change_used = true;
-            batches.active_index = 1;
+            batches.active_index = batches.batches.length - 1;
           } else if (args.batch_action === "saved") {
             if (!batches.batches[Number(args.batch_index ?? 0)])
               throw new AgentError(
@@ -193,22 +219,61 @@ export class AgentService {
         }
         let plan: Plan;
         try {
+          if (selectedIds && planningPool.length !== selectedIds.length)
+            throw new AgentError(
+              "SELECTED_TRADERS_UNAVAILABLE",
+              "Some selected traders are absent from the current source pool; review the missing selected IDs without substituting traders.",
+            );
           const saved = s.plans.at(-1);
           plan =
             args.batch_action &&
             saved &&
             fingerprint(saved.preferences) === fingerprint(pref)
               ? structuredClone(saved)
-              : recommend(
-                  pref,
-                  args.trader_ids
-                    ? pool.filter((c) =>
-                        (args.trader_ids as string[]).includes(c.id),
-                      )
-                    : args.batch_action
-                      ? displayedPool
-                      : pool,
+              : recommend(pref, planningPool);
+          // Browsing must preserve a user's edited plan. Preference changes keep
+          // custom weights if still valid, or explain the conflict instead of resetting them.
+          if (
+            selectedIds &&
+            saved &&
+            !args.batch_action &&
+            fingerprint(saved.allocations.map((a) => a.trader.id).sort()) ===
+              fingerprint([...selectedIds].sort())
+          ) {
+            const total = saved.allocations.reduce(
+              (n, a) => n.plus(a.amount_usdc),
+              D(0),
+            );
+            for (const a of plan.allocations) {
+              const old = saved.allocations.find(
+                (x) => x.trader.id === a.trader.id,
+              )!;
+              if (
+                total.gt(pref.budget_usdc) ||
+                D(old.amount_usdc).lt(D.max(50, a.trader.min_notional_usdc)) ||
+                old.leverage_cap > a.leverage_cap
+              )
+                throw new AgentError(
+                  "ALLOCATION_REVIEW_REQUIRED",
+                  "The saved amounts or leverage no longer fit the updated budget/risk constraints. Review the saved plan and explicitly adjust allocations; other choices were preserved.",
                 );
+              Object.assign(a, {
+                amount_usdc: old.amount_usdc,
+                leverage_cap: old.leverage_cap,
+                stop_loss_pct: old.stop_loss_pct,
+              });
+              for (const key of [
+                "copy_mode",
+                "fixed_margin_usdc",
+                "proportional_multiplier",
+                "loss_policy",
+                "emergency_exit_pct",
+              ] as const)
+                if (!(key in answers) && old[key] != null)
+                  (a as any)[key] = old[key];
+            }
+          }
+          plan.preference_sources = collection.sources;
           plan.allocations.forEach(validateCopySettings);
         } catch (error) {
           const diagnostics = recommendationDiagnostics(pref, planningPool);
@@ -226,6 +291,46 @@ export class AgentService {
             diagnostics.stage = "plan_validation";
             diagnostics.blocker = diagnosticCode;
           }
+          if (diagnosticCode === "ALLOCATION_REVIEW_REQUIRED") {
+            diagnostics.stage = "saved_allocation_validation";
+            diagnostics.rules.push({
+              trader_id: "plan",
+              rule: diagnosticCode,
+              field: "allocations/budget_usdc/leverage_cap",
+              current: s.plans
+                .at(-1)
+                ?.allocations.map((a) => ({
+                  trader_id: a.trader.id,
+                  amount_usdc: a.amount_usdc,
+                  leverage_cap: a.leverage_cap,
+                })),
+              required: {
+                budget_usdc: pref.budget_usdc,
+                limits: planningPool.map((c) => ({
+                  trader_id: c.id,
+                  minimum_usdc: cash(D.max(50, c.min_notional_usdc)),
+                  leverage_cap: recommendedLeverage(pref, c),
+                })),
+              },
+              message:
+                "Saved allocations no longer meet the updated amount or leverage limits. Edit only the conflicting amounts/caps through recalculate_plan; no risk or budget was increased.",
+            });
+          }
+          if (diagnosticCode === "SELECTED_TRADERS_UNAVAILABLE") {
+            diagnostics.stage = "selected_trader_lookup";
+            diagnostics.rules.push({
+              trader_id: "plan",
+              rule: diagnosticCode,
+              field: "trader_ids",
+              current: selectedIds?.filter(
+                (id) => !planningPool.some((c) => c.id === id),
+              ),
+              required:
+                "Fresh verified source profile for every selected trader",
+              message:
+                "Refresh the source or explicitly change the unavailable trader selection; no substitute was selected.",
+            });
+          }
           console.warn(
             JSON.stringify({
               event: "recommendation_failed",
@@ -242,8 +347,20 @@ export class AgentService {
           return {
             ...result(
               {
+                ...conversationView(
+                  null,
+                  collection,
+                  eligibleCandidates(pref, pool),
+                  !!selectedIds,
+                ),
                 preferences: pref,
+                candidate_page: candidatePage,
                 plan: null,
+                saved_plan_id: s.plans.at(-1)?.id ?? null,
+                missing_selected_trader_ids:
+                  selectedIds?.filter(
+                    (id) => !planningPool.some((c) => c.id === id),
+                  ) ?? [],
                 account: { authenticated: true, user_id: user },
                 candidates: eligibleCandidates(pref, pool),
                 recommendation_diagnostics: diagnostics,
@@ -275,8 +392,15 @@ export class AgentService {
         s.plans.push(plan);
         return result(
           {
+            ...conversationView(
+              plan,
+              collection,
+              eligibleCandidates(pref, pool),
+              !!selectedIds,
+            ),
             plan,
             preferences: pref,
+            candidate_page: candidatePage,
             recommendation_diagnostics: recommendationDiagnostics(
               pref,
               planningPool,
@@ -306,9 +430,7 @@ export class AgentService {
               ? {
                   recommendation_batches: {
                     ...s.recommendation_batches,
-                    preview_quota_applies: !s.portfolios.some(
-                      (p) => p.state !== "closed",
-                    ),
+                    preview_quota_applies: false,
                     displayed_candidates: displayedPool,
                   },
                 }
@@ -421,8 +543,8 @@ export class AgentService {
       }
       if (name === "set_preferences") {
         const collection = preferenceCollection(s, args as any);
+        savePreferenceCollection(s, collection);
         if (!collection.ready) {
-          s.preference_draft = collection.answers;
           return result(
             {
               preference_collection: collection,
@@ -431,9 +553,6 @@ export class AgentService {
             "requires_preferences",
           );
         }
-        s.preferences = completePreferences(s, args as any)!;
-        s.preference_asset_filter_version = 2;
-        s.preference_draft = undefined;
         return result({
           preference_saved: true,
           preferences: s.preferences,
@@ -454,11 +573,18 @@ export class AgentService {
           previous.preferences,
           previous.asset_filter_version ?? 1,
         );
+        const editCollection = preferenceCollection(
+          {
+            ...s,
+            preferences: previousPreferences,
+            preference_sources:
+              previous.preference_sources ?? s.preference_sources,
+            preference_draft: undefined,
+          },
+          (args.preferences ?? {}) as Partial<Preferences>,
+        );
         const pref = args.preferences
-          ? completePreferences(s, {
-              ...previousPreferences,
-              ...(args.preferences as Partial<Preferences>),
-            })!
+          ? preferences.parse(editCollection.answers)
           : previousPreferences;
         const requested = (args.allocations ??
           previous.allocations.map((x) => ({
@@ -469,8 +595,8 @@ export class AgentService {
           }))) as {
           trader_id: string;
           amount_usdc: string;
-          leverage_cap: number;
-          stop_loss_pct: number;
+          leverage_cap?: number;
+          stop_loss_pct?: number;
           copy_mode?: "ride_recommends" | "fixed" | "proportional";
           fixed_margin_usdc?: string;
           proportional_multiplier?: number;
@@ -501,6 +627,9 @@ export class AgentService {
           requested.map((x) => this.adapter.profile(x.trader_id)),
         );
         const plan = recommend(effectivePref, pool);
+        plan.preference_sources = args.preferences
+          ? editCollection.sources
+          : previous.preference_sources;
         if (plan.allocations.length !== requested.length)
           throw new AgentError(
             "PLAN_CHANGED",
@@ -514,9 +643,18 @@ export class AgentService {
           );
         plan.allocations = requested.map((x, i) => {
           const cap = recommendedLeverage(pref, pool[i])!;
+          const prior = previous.allocations.find(
+            (a) => a.trader.id === x.trader_id,
+          );
+          const leverage = x.leverage_cap ?? prior?.leverage_cap ?? cap;
+          const settings = {
+            ...prior,
+            ...((args.preferences as Partial<Preferences>) ?? {}),
+            ...x,
+          };
           if (
-            x.leverage_cap > cap ||
-            (pool[i].market === "prediction" && x.leverage_cap !== 1)
+            leverage > cap ||
+            (pool[i].market === "prediction" && leverage !== 1)
           )
             throw new AgentError(
               "INVALID_LEVERAGE",
@@ -538,41 +676,18 @@ export class AgentService {
           return {
             ...plan.allocations.find((a) => a.trader.id === x.trader_id)!,
             amount_usdc: cash(x.amount_usdc),
-            leverage_cap: x.leverage_cap,
-            stop_loss_pct: x.stop_loss_pct,
-            copy_mode:
-              x.copy_mode ??
-              previous.allocations.find((a) => a.trader.id === x.trader_id)
-                ?.copy_mode ??
-              pref.copy_mode,
+            leverage_cap: leverage,
+            stop_loss_pct: x.stop_loss_pct ?? prior?.stop_loss_pct ?? 30,
+            copy_mode: settings.copy_mode ?? pref.copy_mode,
             fixed_margin_usdc:
-              (x.fixed_margin_usdc ??
-                previous.allocations.find((a) => a.trader.id === x.trader_id)
-                  ?.fixed_margin_usdc ??
-                pref.fixed_margin_usdc) == null
+              settings.fixed_margin_usdc == null
                 ? undefined
-                : cash(
-                    (x.fixed_margin_usdc ??
-                      previous.allocations.find(
-                        (a) => a.trader.id === x.trader_id,
-                      )?.fixed_margin_usdc ??
-                      pref.fixed_margin_usdc)!,
-                  ),
+                : cash(settings.fixed_margin_usdc),
             proportional_multiplier:
-              x.proportional_multiplier ??
-              previous.allocations.find((a) => a.trader.id === x.trader_id)
-                ?.proportional_multiplier ??
-              pref.proportional_multiplier,
-            loss_policy:
-              x.loss_policy ??
-              previous.allocations.find((a) => a.trader.id === x.trader_id)
-                ?.loss_policy ??
-              pref.loss_policy,
+              settings.proportional_multiplier ?? pref.proportional_multiplier,
+            loss_policy: settings.loss_policy ?? pref.loss_policy,
             emergency_exit_pct:
-              x.emergency_exit_pct ??
-              previous.allocations.find((a) => a.trader.id === x.trader_id)
-                ?.emergency_exit_pct ??
-              pref.emergency_exit_pct,
+              settings.emergency_exit_pct ?? pref.emergency_exit_pct,
           };
         });
         s.plans = s.plans
@@ -580,12 +695,25 @@ export class AgentService {
           .slice(-99);
         plan.allocations.forEach(validateCopySettings);
         s.plans.push(plan);
-        const candidates = eligibleCandidates(
-          pref,
-          await this.adapter.candidates(),
-        );
+        if (args.preferences)
+          savePreferenceCollection(
+            s,
+            preferenceCollection(s, args.preferences as Partial<Preferences>),
+          );
+        if (args.allocations && pref.portfolio_kind)
+          s.selected_trader_ids = requested.map((x) => x.trader_id);
+        const sourcePool = await this.adapter.candidates();
+        const candidates = eligibleCandidates(pref, sourcePool);
+        const savedPreferences = completePreferences(s)!;
+        saveDiscovery(s, savedPreferences, sourcePool);
         return result(
           {
+            ...conversationView(
+              plan,
+              editCollection,
+              candidates,
+              !!s.selected_trader_ids,
+            ),
             plan,
             candidates,
             candidate_limits: candidates.map((c) => ({
@@ -597,9 +725,7 @@ export class AgentService {
             recommendation_batches: s.recommendation_batches
               ? {
                   ...s.recommendation_batches,
-                  preview_quota_applies: !s.portfolios.some(
-                    (p) => p.state !== "closed",
-                  ),
+                  preview_quota_applies: false,
                   displayed_candidates: candidates.filter((c) =>
                     s.recommendation_batches!.batches[
                       s.recommendation_batches!.active_index
@@ -607,6 +733,11 @@ export class AgentService {
                   ),
                 }
               : undefined,
+            candidate_page:
+              s.discovery!.expires_at > now()
+                ? browse(s, savedPreferences, { limit: 5 }, user, this.cursor)
+                    .candidates_meta
+                : null,
             previous_plan_id: previous.id,
             requires_new_confirmation: true,
             unallocated_usdc: cash(D(pref.budget_usdc).minus(total)),

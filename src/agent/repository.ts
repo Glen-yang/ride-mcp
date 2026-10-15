@@ -51,6 +51,17 @@ export interface HoldingCheckpoint {
   quantities: Record<string, string>;
 }
 export interface State {
+  preference_sources?: Partial<
+    Record<keyof Preferences, "user" | "default" | "recommended">
+  >;
+  selected_trader_ids?: string[];
+  discovery?: {
+    id: string;
+    preference_hash: string;
+    created_at: number;
+    expires_at: number;
+    candidates: import("./domain.js").Candidate[];
+  };
   preference_asset_filter_version?: 2;
   preferences: Preferences | null;
   preference_draft?: Partial<Preferences>;

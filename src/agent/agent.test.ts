@@ -28,6 +28,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { registerAgentTools } from "./mcp.js";
+import { compatibility } from "./conversational.js";
 
 import { candidate, snapshot, FakeAdapter } from "./fixtures.js";
 function service() {
@@ -83,6 +84,7 @@ async function proposed() {
   const r = await env.api.tool("alice", "recommend_traders", {});
   const p = await env.api.tool("alice", "start_copy", {
     plan_id: (r.data.plan as any).id,
+    compatibility_ack: compatibility(r.data.plan as any).fingerprint,
   });
   return { ...env, proposal: p.data.proposal as any };
 }
@@ -440,7 +442,7 @@ describe("approval and ownership", () => {
     assert.equal(adapter.submitCount, count);
   });
 });
-it("exposes twenty-two serializable tools and a read-only directory subset", async () => {
+it("exposes twenty-three serializable tools and a read-only directory subset", async () => {
   for (const readOnly of [false, true]) {
     const server = new McpServer({ name: "test", version: "1" });
     registerAgentTools(server, async () => result({}), readOnly);
@@ -448,8 +450,27 @@ it("exposes twenty-two serializable tools and a read-only directory subset", asy
     const [a, b] = InMemoryTransport.createLinkedPair();
     await Promise.all([server.connect(a), client.connect(b)]);
     const tools = await client.listTools();
-    assert.equal(tools.tools.length, readOnly ? 11 : 22);
+    assert.equal(tools.tools.length, readOnly ? 12 : 23);
     assert(tools.tools.every((t) => t.inputSchema.type === "object"));
+    for (const name of [
+      "get_preferences",
+      "set_preferences",
+      "recommend_traders",
+      "browse_traders",
+      "get_portfolio",
+    ])
+      assert.equal(
+        tools.tools.find((t) => t.name === name)?._meta?.[
+          "openai/outputTemplate"
+        ],
+        undefined,
+      );
+    if (!readOnly)
+      assert.ok(
+        tools.tools.find((t) => t.name === "start_copy")?._meta?.[
+          "openai/outputTemplate"
+        ],
+      );
     await client.close();
     await server.close();
   }

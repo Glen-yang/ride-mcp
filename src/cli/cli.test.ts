@@ -123,3 +123,52 @@ it("maps money-sensitive commands to the same strict contracts", () => {
   assert.equal(command.args.leverage_cap, 5);
   assert.throws(() => parseCommand(["portfolio", "--server"]));
 });
+it("upgrades an unmodified v0.4.3 Skill and pinned client config while refusing a customized Skill", async () => {
+  const home = await mkdtemp(join(tmpdir(), "ride-v043-migration-"));
+  try {
+    const installed = await setup("cursor", "https://ride.test/mcp", home);
+    const files = JSON.parse(
+      await readFile(
+        new URL("./fixtures/skill-v043.json", import.meta.url),
+        "utf8",
+      ),
+    );
+    await rm(installed.skill, { recursive: true });
+    for (const [path, content] of Object.entries(files)) {
+      const target = join(installed.skill, path);
+      await mkdir(join(target, ".."), { recursive: true });
+      await writeFile(target, content as string);
+    }
+    const config = JSON.parse(await readFile(installed.config, "utf8"));
+    config.mcpServers.ride.args = [
+      "-y",
+      "@glenyang/ride-cli@0.4.3",
+      "mcp",
+      "--server",
+      "https://ride.test/mcp",
+    ];
+    await writeFile(installed.config, JSON.stringify(config));
+    await setup("cursor", "https://ride.test/mcp", home);
+    assert.ok(
+      (await readFile(join(installed.skill, "SKILL.md"), "utf8")).includes(
+        "budget and risk preference only",
+      ),
+    );
+    assert.ok(
+      (await readFile(installed.config, "utf8")).includes(
+        "@glenyang/ride-cli@latest",
+      ),
+    );
+    await writeFile(join(installed.skill, "custom.md"), "My own instructions");
+    await assert.rejects(
+      setup("cursor", "https://ride.test/mcp", home),
+      /differs/,
+    );
+    assert.equal(
+      await readFile(join(installed.skill, "custom.md"), "utf8"),
+      "My own instructions",
+    );
+  } finally {
+    await rm(home, { recursive: true, force: true });
+  }
+});

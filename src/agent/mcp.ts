@@ -34,10 +34,6 @@ export function registerAppAccountRead(
         idempotentHint: true,
         openWorldHint: true,
       },
-      _meta: {
-        ui: { resourceUri: RESOURCE_URI },
-        "openai/outputTemplate": RESOURCE_URI,
-      },
     },
     async (args, extra) => {
       try {
@@ -110,10 +106,14 @@ export function registerAgentTools(
           idempotentHint: !stateTools.has(name) && !mutationTools.has(name),
           openWorldHint: true,
         },
-        _meta: {
-          ui: { resourceUri: RESOURCE_URI },
-          "openai/outputTemplate": RESOURCE_URI,
-        },
+        ...(mutationTools.has(name) || name === "prepare_deposit"
+          ? {
+              _meta: {
+                ui: { resourceUri: RESOURCE_URI },
+                "openai/outputTemplate": RESOURCE_URI,
+              },
+            }
+          : {}),
       },
       async (args: unknown, extra: any) => {
         try {
@@ -166,7 +166,7 @@ export async function invokeAgent(
 function description(name: ToolName): string {
   const descriptions: Record<ToolName, string> = {
     get_preferences:
-      "Read saved and partial preferences. Ask the returned missing questions before recommendations; preserve earlier answers. Never invent budget or acceptable loss.",
+      "Read saved/partial answers. Start in chat with budget and risk preference only; ask only returned missing questions. Preserve earlier answers. Numeric risk presets are suggestions requiring final confirmation, not user consent.",
     prepare_deposit:
       "Prepare an exact-amount deposit activation for an owned funding request. Returns a human Ride confirmation URL; no funds move until the user confirms and signs there.",
     get_deposit_options:
@@ -180,7 +180,7 @@ function description(name: ToolName): string {
     update_portfolio:
       "Propose changing the owned portfolio loss threshold; requires Ride confirmation and cannot unlatch a triggered stop.",
     set_preferences:
-      "Save only the user's supplied preference answers, including partial answers. Returns the remaining questions; never fill a missing budget or loss tolerance yourself. Existing portfolios are unchanged.",
+      "Save only supplied user answers, including partial budget/risk answers. Defaults and numeric risk suggestions are marked separately; do not ask for optional settings up front. Existing portfolios are unchanged.",
     recalculate_plan:
       "Refresh a saved preview or validate edited trader allocations against fresh eligibility, budget and leverage limits. Returns a new frozen plan; no execution.",
     get_performance:
@@ -192,7 +192,9 @@ function description(name: ToolName): string {
     set_notification_preferences:
       "Save explicitly requested daily Ride App digest opt-in, local time and IANA timezone. Critical risk alerts remain enabled; this does not authorize trading.",
     recommend_traders:
-      "First read get_preferences and ask its missing questions. Recommend using saved/user-supplied answers, or return questions without candidates if incomplete. Default assets are unrestricted; both markets means either is allowed. Show candidates independently of plan errors and explain returned rules/feasible counts. Single or 2–8 explicit baskets, legacy 3–6; no funding is required for preview.",
+      "After get_preferences collect only missing budget/risk in conversation. Show recommended_portfolio and candidate_table as two compact chat tables. Assets default unrestricted, markets default both (either allowed); count is automatically feasible up to four unless user chooses 1–8 or trader_ids. Selections persist across edits; selection:system clears the pinned selection. Show candidates even if plan fails; no funding required. Defaults and risk parameters are suggestions for final Ride confirmation.",
+    browse_traders:
+      "Page or sort the entire current verified candidate snapshot by score/drawdown/ROI; missing metrics sort last. Default five, request limit:10 for ten more, pass next_cursor with the same sort. compare_ids compares named public IDs. Does not replace the plan, allocations or selections. Disclose source pool limits, metric periods and incomparable/missing data. Refresh expired snapshots through recommend_traders.",
     get_trader_profile:
       "Read verified source statistics and actual Copy Score components using a public trader ID.",
     start_copy:

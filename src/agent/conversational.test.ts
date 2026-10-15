@@ -14,6 +14,7 @@ import {
 } from "./analytics.js";
 import { applyFill } from "./ledger.js";
 import { inputs, publicResult } from "./contracts.js";
+import { compatibility } from "./conversational.js";
 import { parseCommand } from "../cli/commands.js";
 const pref = {
   budget_usdc: "500",
@@ -43,7 +44,10 @@ it("previews with zero funds and refreshes an expired plan into a new immutable 
   assert.equal(resumed.status, "empty");
   assert.equal((resumed.data.plan as any).id, plan.id);
   await assert.rejects(
-    api.tool("alice", "start_copy", { plan_id: plan.id }),
+    api.tool("alice", "start_copy", {
+      plan_id: plan.id,
+      compatibility_ack: compatibility(plan).fingerprint,
+    }),
     /funds/,
   );
   await repository.transact("alice", async (s) => {
@@ -63,7 +67,10 @@ it("previews with zero funds and refreshes an expired plan into a new immutable 
   );
   adapter.snap.available_usdc = "500";
   const proposal = (
-    await api.tool("alice", "start_copy", { plan_id: refreshed.id })
+    await api.tool("alice", "start_copy", {
+      plan_id: refreshed.id,
+      compatibility_ack: compatibility(refreshed).fingerprint,
+    })
   ).data.proposal as any;
   assert.equal(proposal.status, "requires_confirmation");
   adapter.pool[0].eligibility = "REJECT";
@@ -119,12 +126,11 @@ it("validates changed selections, exact amounts, concentration, risk caps and pr
     }),
     /55%/,
   );
-  assert.throws(() =>
-    inputs.recalculate_plan.parse({
-      plan_id: plan.id,
-      allocations: allocations.slice(0, 2),
-    }),
-  );
+  const two = await api.tool("alice", "recalculate_plan", {
+    plan_id: plan.id,
+    allocations: allocations.slice(0, 2),
+  });
+  assert.equal((two.data.plan as any).allocations.length, 2);
   assert.throws(() =>
     inputs.recalculate_plan.parse({
       plan_id: plan.id,

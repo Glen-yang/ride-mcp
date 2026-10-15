@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { AgentService, fromPlan } from "./service.js";
 import { PgRepository, MemoryRepository, Cursor } from "./repository.js";
+import { compatibility } from "./conversational.js";
 import { AgentRunner } from "./runner.js";
 import { candidate, snapshot, FakeAdapter } from "./fixtures.js";
 import { now, recommend, fingerprint, uid } from "./domain.js";
@@ -31,8 +32,12 @@ it(
       await api.tool(user, "set_preferences", pref);
       const plan = (await api.tool(user, "recommend_traders", {})).data
         .plan as any;
-      const q = (await api.tool(user, "start_copy", { plan_id: plan.id })).data
-        .proposal as any;
+      const q = (
+        await api.tool(user, "start_copy", {
+          plan_id: plan.id,
+          compatibility_ack: compatibility(plan).fingerprint,
+        })
+      ).data.proposal as any;
       await Promise.all(
         Array.from({ length: 8 }, () =>
           api.confirm(user, q.id, q.preview_hash),

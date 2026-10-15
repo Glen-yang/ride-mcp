@@ -10,7 +10,7 @@ Default output is JSON. Add `--pretty` for human-readable cards/tables. The CLI 
 
 | MCP tool                     | CLI                                                                                                                                                 |
 | ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
-| set_preferences              | `ride preferences --json '{"budget_usdc":"500","loss_trigger_pct":20,"market":"perps","assets":["BTC","ETH"]}'`                                     |
+| set_preferences              | `ride preferences --json '{"budget_usdc":"500","risk_tolerance":"medium"}'`                                     |
 | recommend_traders            | `ride recommend`                                                                                                                                    |
 | get_trader_profile           | `ride trader TRADER_ID`                                                                                                                             |
 | start_copy                   | `ride copy start PLAN_ID`                                                                                                                           |
@@ -37,7 +37,7 @@ Default output is JSON. Add `--pretty` for human-readable cards/tables. The CLI 
 | get_daily_checkin    | `ride daily --timezone Asia/Shanghai`                                                  |
 | update_portfolio     | `ride portfolio update PORTFOLIO_ID --json '{"loss_trigger_pct":40}'`                  |
 
-`ride recommend --json '{"preferences":{"budget_usdc":"500","loss_trigger_pct":40,"market":"perps","assets":["BTC","ETH"],"portfolio_kind":"basket","basket_size":4,"risk_tolerance":"medium","asset_category":"crypto","copy_mode":"ride_recommends","loss_policy":"pause_then_exit","emergency_exit_pct":70},"batch_action":"first"}'` starts the HTML-style preview. Keep the returned preferences with `plan recalculate`. A flagged start uses `ride copy start PLAN_ID --json '{"compatibility_ack":"RETURNED_FINGERPRINT"}'` after the user explicitly acknowledges its warning.
+`ride recommend --json '{"preferences":{"budget_usdc":"200","risk_tolerance":"medium"}}'` starts the conversation preview with disclosed defaults and risk suggestions. `ride traders --sort drawdown --limit 10` sorts the full verified snapshot; `ride traders --json '{"compare_ids":["TRADER_ID_A","TRADER_ID_B"]}'` compares. For another page use the returned cursor with the same sort/direction. `ride recommend --json '{"trader_ids":["TRADER_ID_A"]}'` selects one; multiple IDs select a basket. `ride recommend --json '{"selection":"system","preferences":{"basket_size":3,"portfolio_kind":"basket"}}'` requests a new automatic three-trader preview. A flagged start uses `ride copy start PLAN_ID --json '{"compatibility_ack":"RETURNED_FINGERPRINT"}'` after explicit acknowledgment.
 
 | MCP tool        | CLI                                                             |
 | --------------- | --------------------------------------------------------------- |
