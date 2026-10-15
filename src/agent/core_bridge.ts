@@ -1025,6 +1025,8 @@ export class CoreBridge {
       }),
     );
     const exposure = D.min(
+      // Preserve Core's existing NUMERIC(8,4) columns and prepared statements.
+      "9999.9999",
       policyLeverage * 100,
       p.sleeves
         .filter((s) => s.trader.market === "perps" && s.state !== "closed")

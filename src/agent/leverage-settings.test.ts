@@ -347,6 +347,10 @@ it("carries 40x through the mock Core boundary and rejects a changed venue limit
     });
     assert.equal((outbox as any).payload.leverage, 50);
     assert.equal(submissions, 2);
+    snap.max_leverages[e.key] = 100;
+    await stub.configure("alice", p, { ...snap, account_value_usdc: "20" });
+    assert.equal(policies[2].max_leverage, 100);
+    assert.equal(policies[2].max_total_position_pct, "9999.9999");
   } finally {
     await bridge.close();
   }

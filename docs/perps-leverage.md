@@ -20,18 +20,23 @@ a no-cap plan.
 
 ## Isolated rollout
 
-Deploy only the independent Agent Core gRPC, Core execution, bridge, backend
-and MCP gateway services, in that order. Keep old App API/worker/gRPC services
+Deploy only the independent Core gRPC, Core API and Core execution services
+first. Their rollout preserves existing approved settings. Verify the gRPC
+schema preflight and all three services before applying bridge/backend changes;
+publish the MCP gateway last. Keep old App API/worker/gRPC services
 on their current deployments. Publish the backend's nullable input support
 before exposing the new gateway tool schemas. No real plan activation or order
 is needed for acceptance.
 
-The opt-in Core bootstrap preserves old policy records, the current-policy
-view's columns, values and access grants, and the SQLx migration registry. It
-widens execution percentage precision to represent the existing Core 1–100
-leverage wire range; that range is not substituted for a default user cap.
-Legacy bindings retain their 100% exposure checks. Exchange limits and the
-approved policy are still checked on execution.
+The opt-in Core bootstrap preserves old policy records, existing numeric
+precision, column-level immutable triggers, long-lived prepared statements,
+the current-policy view identity/permissions and the SQLx migration registry.
+Only execution checks expand within the existing NUMERIC(8,4) range; the
+existing Core 1–100 leverage wire range is not substituted for a user cap.
+Legacy bindings retain their 100% exposure checks. Use the independent gRPC
+pre-deploy command `RIDE_AGENT_SCHEMA_PREFLIGHT_ONLY=true ./grpc` so schema
+validation completes before replacing the running instance. Exchange limits
+and the approved policy are still checked on execution.
 
 Acceptance uses a disposable PostgreSQL database and simulated exchanges:
 20-USDC plans, 10-USDC sleeves, optional 20x/40x caps, clearing caps, verified
