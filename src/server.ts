@@ -25,6 +25,7 @@ import {
 import { invokeAccountRead } from "./account_reads.js";
 import { mountAgentProxy } from "./agent/http.js";
 import { mountHumanConfirmation } from "./agent/human.js";
+import { redisHumanHandoffs } from "./agent/human_handoffs.js";
 import { validateCoreIdentity } from "./agent/backend.js";
 import { AgentError, mutationTools } from "./agent/contracts.js";
 import { VERSION } from "./version.js";
@@ -140,6 +141,9 @@ async function main(): Promise<void> {
       cookieKey: required("RIDE_AGENT_HUMAN_COOKIE_KEY"),
       auth: config,
       exchange,
+      handoffs: process.env.REDIS_URL
+        ? await redisHumanHandoffs(process.env.REDIS_URL)
+        : undefined,
     });
   }
   app.get("/health", (_req, res) =>
@@ -181,6 +185,16 @@ async function main(): Promise<void> {
         );
       },
       readOnly,
+      {
+        base: base.href,
+        readProposal: (id, extra) =>
+          invokeAgent(
+            backend,
+            extra.authInfo?.extra?.rideAuthToken,
+            "proposal",
+            { proposal_id: id },
+          ),
+      },
     );
     registerAppAccountRead(server, async (args, extra) => {
       if (!extra.authInfo?.scopes?.includes("ride:read"))

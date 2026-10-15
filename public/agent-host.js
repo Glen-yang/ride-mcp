@@ -1,4 +1,5 @@
 const root = document.getElementById("content");
+const hostConfig = /*HOST_CONFIG*/ {};
 let requestId = 0;
 const pending = new Map();
 const history = [];
@@ -15,7 +16,13 @@ function accept(value) {
   }
 }
 function draw() {
-  render(root, current, openLink, callTool);
+  render(
+    root,
+    current,
+    openLink,
+    callTool,
+    hostConfig.confirmation_origin ? confirmationCard : undefined,
+  );
   if (history.length) {
     const back = el("button", "Back", "secondary");
     back.addEventListener("click", () => {
@@ -23,6 +30,74 @@ function draw() {
       draw();
     });
     root.prepend(back);
+  }
+}
+function confirmationCard(container, proposal, demo) {
+  try {
+    const base = new URL(hostConfig.confirmation_origin);
+    const id = proposal.id;
+    if (base.protocol !== "https:" && base.hostname !== "127.0.0.1")
+      throw Error("Secure Ride origin unavailable.");
+    if (
+      !demo &&
+      (!/^proposal_[a-zA-Z0-9_-]{8,100}$/.test(id) ||
+        new URL(proposal.confirmation_url).origin !== base.origin ||
+        new URL(proposal.confirmation_url).pathname !== `/agent/confirm/${id}`)
+    )
+      throw Error(
+        "The confirmation address does not match this Ride proposal.",
+      );
+    const frame = document.createElement("iframe");
+    frame.title = demo ? "Ride 模拟确认卡片" : "Ride 操作确认";
+    frame.className = "confirmation-frame";
+    frame.referrerPolicy = "no-referrer";
+    frame.setAttribute(
+      "sandbox",
+      "allow-scripts allow-same-origin allow-popups allow-forms allow-popups-to-escape-sandbox",
+    );
+    frame.src = new URL(
+      demo ? "/agent/card-demo" : `/agent/card/${id}`,
+      base,
+    ).href;
+    container.append(frame);
+    const state = el("p", "正在连接 Ride 确认卡片…", "muted");
+    state.setAttribute("aria-live", "polite");
+    container.append(state);
+    const onMessage = (event) => {
+      if (!frame.isConnected) {
+        window.removeEventListener("message", onMessage);
+        return;
+      }
+      if (
+        event.source !== frame.contentWindow ||
+        event.origin !== base.origin ||
+        event.data?.type !== "ride:confirmation-state" ||
+        (!demo && event.data.proposal_id !== id)
+      )
+        return;
+      const names = {
+        demo_ready: "模拟卡片已就绪 · 不会交易",
+        demo_confirmed: "模拟确认成功 · 未提交交易",
+        demo_rejected: "模拟已取消 · 未提交交易",
+        sign_in_required: "请在卡片中连接 Ride",
+        requires_confirmation: "请核对方案并确认",
+        queued: "已确认，等待处理",
+        rejected: "方案已取消",
+        confirmed: "已确认",
+        expired: "方案已过期",
+      };
+      state.textContent = names[event.data.status] ?? "Ride 状态已更新";
+      if (Number.isFinite(event.data.height))
+        frame.style.height = `${Math.min(1400, Math.max(420, event.data.height))}px`;
+    };
+    window.addEventListener("message", onMessage);
+    if (!demo) {
+      const fallback = el("button", "在 Ride 页面中打开", "secondary");
+      fallback.onclick = () => openLink(proposal.confirmation_url);
+      container.append(fallback);
+    }
+  } catch (error) {
+    showError(error.message);
   }
 }
 function request(method, params) {

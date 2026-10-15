@@ -251,3 +251,10 @@ summary {
 .field input[type="checkbox"] {
   width: auto;
 }
+.confirmation-frame {
+  width: 100%;
+  height: 680px;
+  border: 1px solid #e2e2da;
+  border-radius: 16px;
+  background: #fcfbf8;
+}

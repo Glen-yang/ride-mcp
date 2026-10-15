@@ -251,6 +251,13 @@ summary {
 .field input[type="checkbox"] {
   width: auto;
 }
+.confirmation-frame {
+  width: 100%;
+  height: 680px;
+  border: 1px solid #e2e2da;
+  border-radius: 16px;
+  background: #fcfbf8;
+}
 </style></head><body><main><header><div class="brand">ride / trading account funding</div><span class="tag">Human confirmation</span></header><div class="card" id="login"><h1>Sign in to fund your trading account</h1><label>Access code, if required<input id="access-code" autocomplete="off"></label><button id="sign-in">Continue with Google</button></div><p id="status" aria-live="polite"></p><div id="content"></div></main><script type="module">const config=/*CONFIG*/{};
 /*INLINE_FUND*/let client, csrf, user, funding;
 const status = document.getElementById("status"),
@@ -492,14 +499,28 @@ async function finish(session) {
       (w.chain_type ?? w.chainType) === "ethereum" &&
       (w.wallet_client_type ?? w.walletClientType) === "privy",
   );
-  const login = await call("login", {
-    privyId: user.id,
-    privyAccessToken: await c.getAccessToken(),
-    walletAddress: wallet?.address,
-    privyWalletId: wallet?.id,
-    authProvider: "GOOGLE",
-    accessCode: sessionStorage.getItem("ride:agent:access-code") ?? undefined,
-  });
+  let saved;
+  if (!session) {
+    const response = await fetch("/agent/human/session", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
+      body: "{}",
+    });
+    if (response.ok) saved = await response.json();
+    else if (response.status !== 401 && response.status !== 403)
+      throw Error("Could not restore the Ride session. Please retry.");
+  }
+  const login =
+    saved ??
+    (await call("login", {
+      privyId: user.id,
+      privyAccessToken: await c.getAccessToken(),
+      walletAddress: wallet?.address,
+      privyWalletId: wallet?.id,
+      authProvider: "GOOGLE",
+      accessCode: sessionStorage.getItem("ride:agent:access-code") ?? undefined,
+    }));
   csrf = login.csrf;
   sessionStorage.removeItem("ride:agent:access-code");
   document.getElementById("login").hidden = true;

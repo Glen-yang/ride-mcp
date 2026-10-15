@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { z } from "zod";
 import { accountCopiesInput } from "../account_reads.js";
 import {
   AgentError,
@@ -15,7 +16,7 @@ import {
   type ToolName,
 } from "./contracts.js";
 
-export const RESOURCE_URI = "ui://ride/agent-v3.html";
+export const RESOURCE_URI = "ui://ride/agent-v4-confirmation.html";
 export function registerAppAccountRead(
   server: McpServer,
   invoke: (args: unknown, extra: any) => Promise<Result>,
@@ -58,7 +59,14 @@ export function registerAgentTools(
   server: McpServer,
   invoke: (name: ToolName, args: unknown, extra: any) => Promise<Result>,
   readOnly = false,
+  confirmation?: {
+    base: string;
+    readProposal: (id: string, extra: any) => Promise<Result>;
+  },
 ): void {
+  const confirmationOrigin = confirmation
+    ? new URL(confirmation.base).origin
+    : undefined;
   server.server.registerCapabilities({
     extensions: {
       "io.modelcontextprotocol/ui": {
@@ -66,26 +74,135 @@ export function registerAgentTools(
       },
     },
   });
-  server.registerResource(
-    "ride-agent-cards",
-    RESOURCE_URI,
-    {
-      mimeType: "text/html;profile=mcp-app",
-      _meta: { "openai/widgetPrefersBorder": true },
-    },
-    async () => ({
-      contents: [
-        {
-          uri: RESOURCE_URI,
-          mimeType: "text/html;profile=mcp-app",
-          text: await readFile(
-            fileURLToPath(new URL("../../public/agent.html", import.meta.url)),
-            "utf8",
-          ),
+  for (const resourceUri of [RESOURCE_URI, "ui://ride/agent-v3.html"])
+    server.registerResource(
+      "ride-agent-cards",
+      resourceUri,
+      {
+        mimeType: "text/html;profile=mcp-app",
+        _meta: { "openai/widgetPrefersBorder": true },
+      },
+      async () => ({
+        contents: [
+          {
+            uri: resourceUri,
+            mimeType: "text/html;profile=mcp-app",
+            text: (
+              await readFile(
+                fileURLToPath(
+                  new URL("../../public/agent.html", import.meta.url),
+                ),
+                "utf8",
+              )
+            ).replace(
+              "/*HOST_CONFIG*/{}",
+              JSON.stringify({
+                confirmation_origin: confirmationOrigin,
+              }).replaceAll("<", "\\u003c"),
+            ),
+            _meta: {
+              ui: {
+                prefersBorder: true,
+                ...(confirmationOrigin
+                  ? {
+                      csp: { frameDomains: [confirmationOrigin] },
+                    }
+                  : {}),
+              },
+              ...(confirmationOrigin
+                ? {
+                    "openai/widgetCSP": { frame_domains: [confirmationOrigin] },
+                  }
+                : {}),
+            },
+          },
+        ],
+      }),
+    );
+  if (confirmation && !readOnly)
+    server.registerTool(
+      "show_confirmation_card",
+      {
+        title: "Ride confirmation card",
+        description:
+          "Show an owned frozen proposal in a human confirmation card. mode:demo renders a 0-USDC interface test without account changes or any execution. This tool never confirms, signs or submits a proposal.",
+        inputSchema: z
+          .object({
+            mode: z.enum(["demo", "proposal"]),
+            proposal_id: z
+              .string()
+              .regex(/^proposal_[a-zA-Z0-9_-]{8,100}$/)
+              .optional(),
+          })
+          .strict(),
+        outputSchema: output,
+        annotations: {
+          readOnlyHint: true,
+          destructiveHint: false,
+          idempotentHint: true,
+          openWorldHint: false,
         },
-      ],
-    }),
-  );
+        _meta: {
+          ui: { resourceUri: RESOURCE_URI },
+          "openai/outputTemplate": RESOURCE_URI,
+        },
+      },
+      async ({ mode, proposal_id }, extra) => {
+        try {
+          if (!extra.authInfo?.scopes?.includes("ride:read"))
+            throw new AgentError(
+              "SCOPE_REQUIRED",
+              "Missing ride:read permission.",
+              false,
+              403,
+            );
+          let value: Result;
+          if (mode === "demo")
+            value = {
+              version: "3",
+              status: "ok",
+              data: {
+                confirmation_demo: true,
+                proposal: {
+                  id: "proposal_card_demo_00000000",
+                  action: "demo",
+                  status: "requires_confirmation",
+                  arguments: { amount_usdc: "0", execution: "disabled" },
+                  preview: {},
+                  expires_at: Date.now() + 300_000,
+                },
+              },
+              warnings: [],
+              as_of: new Date().toISOString(),
+            };
+          else {
+            if (!proposal_id)
+              throw new AgentError(
+                "NOT_FOUND",
+                "Choose an owned proposal to display.",
+                false,
+                400,
+              );
+            value = publicResult(
+              await confirmation.readProposal(proposal_id, extra),
+            );
+            value.data.confirmation_card = true;
+          }
+          return {
+            content: [{ type: "text" as const, text: JSON.stringify(value) }],
+            structuredContent: value,
+            isError: !!value.error,
+          };
+        } catch (e) {
+          const value = failure(e);
+          return {
+            content: [{ type: "text" as const, text: JSON.stringify(value) }],
+            structuredContent: value,
+            isError: true,
+          };
+        }
+      },
+    );
   for (const name of TOOL_NAMES) {
     if (
       readOnly &&

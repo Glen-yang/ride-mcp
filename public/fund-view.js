@@ -238,14 +238,28 @@ async function finish(session) {
       (w.chain_type ?? w.chainType) === "ethereum" &&
       (w.wallet_client_type ?? w.walletClientType) === "privy",
   );
-  const login = await call("login", {
-    privyId: user.id,
-    privyAccessToken: await c.getAccessToken(),
-    walletAddress: wallet?.address,
-    privyWalletId: wallet?.id,
-    authProvider: "GOOGLE",
-    accessCode: sessionStorage.getItem("ride:agent:access-code") ?? undefined,
-  });
+  let saved;
+  if (!session) {
+    const response = await fetch("/agent/human/session", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
+      body: "{}",
+    });
+    if (response.ok) saved = await response.json();
+    else if (response.status !== 401 && response.status !== 403)
+      throw Error("Could not restore the Ride session. Please retry.");
+  }
+  const login =
+    saved ??
+    (await call("login", {
+      privyId: user.id,
+      privyAccessToken: await c.getAccessToken(),
+      walletAddress: wallet?.address,
+      privyWalletId: wallet?.id,
+      authProvider: "GOOGLE",
+      accessCode: sessionStorage.getItem("ride:agent:access-code") ?? undefined,
+    }));
   csrf = login.csrf;
   sessionStorage.removeItem("ride:agent:access-code");
   document.getElementById("login").hidden = true;

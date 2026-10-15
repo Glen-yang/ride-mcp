@@ -12,7 +12,7 @@ for (const name of ["agent", "confirm", "fund"]) {
   html = html
     .replace(/\/\*INLINE_CSS\*\/[\s\S]*?(?=<\/style>)/, `/*INLINE_CSS*/${css}`)
     .replace(
-      /\/\*INLINE_VIEW\*\/[\s\S]*?(?=\n(?:\/\*INLINE_HOST\*\/|const (?:root|config)=))/,
+      /\/\*INLINE_VIEW\*\/[\s\S]*?(?=\n(?:\/\*INLINE_HOST\*\/|\/\*INLINE_CONFIRM\*\/|const (?:root|config)=))/,
       `/*INLINE_VIEW*/${view}`,
     );
   if (name === "agent")
@@ -25,5 +25,13 @@ for (const name of ["agent", "confirm", "fund"]) {
       /\/\*INLINE_FUND\*\/[\s\S]*?(?=<\/script>)/,
       `/*INLINE_FUND*/${await readFile("public/fund-view.js", "utf8")}`,
     );
+  if (name === "confirm")
+    html = html.replace(
+      /\/\*INLINE_CONFIRM\*\/[\s\S]*?(?=<\/script>)/,
+      `/*INLINE_CONFIRM*/${await readFile("public/confirm-host.js", "utf8")}`,
+    );
+  html = html
+    .replace(/\/\*CONFIG\*\/\s*\{\}/g, "/*CONFIG*/{}")
+    .replace(/\/\*HOST_CONFIG\*\/\s*\{\}/g, "/*HOST_CONFIG*/{}");
   await writeFile(path, html);
 }

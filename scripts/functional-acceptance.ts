@@ -520,10 +520,15 @@ try {
     });
     assert.deepEqual(mcp.structuredContent, guide);
     assert.deepEqual(await cli(["guide", "--server", base + "/mcp"]), guide);
-    assert.equal((await alice.client.listTools()).tools.length, 25);
+    assert.equal((await alice.client.listTools()).tools.length, 26);
     assert(alice.client.getInstructions()?.includes("get_ride_guide"));
     assert.equal(guide.protocol, "ride-guide-v1");
-    return { release: guide.release, sha256: guide.sha256, tools: 25 };
+    const demo = await alice.client.callTool({
+      name: "show_confirmation_card",
+      arguments: { mode: "demo" },
+    });
+    assert.equal((demo.structuredContent as any).data.confirmation_demo, true);
+    return { release: guide.release, sha256: guide.sha256, tools: 26 };
   });
   await check(
     "45 20-USDC Perps：MCP/CLI 推荐、重算和确认前不下单",

@@ -72,7 +72,13 @@ function sleeveCards(
   }
   return grid;
 }
-export function render(root, value, openLink = () => {}, callTool = () => {}) {
+export function render(
+  root,
+  value,
+  openLink = () => {},
+  callTool = () => {},
+  confirmationCard,
+) {
   root.replaceChildren();
   if (!value) {
     welcome(root, callTool);
@@ -96,6 +102,19 @@ export function render(root, value, openLink = () => {}, callTool = () => {}) {
       ),
     );
   const d = value.data ?? {};
+  if (
+    confirmationCard &&
+    d.proposal &&
+    (d.proposal.status === "requires_confirmation" ||
+      d.confirmation_demo ||
+      d.confirmation_card)
+  ) {
+    root.append(
+      el("h1", d.confirmation_demo ? "确认卡片测试" : "确认本次操作"),
+    );
+    confirmationCard(root, d.proposal, d.confirmation_demo === true);
+    return;
+  }
   if (d.account?.authenticated) {
     root.append(
       el(
@@ -614,7 +633,12 @@ export function render(root, value, openLink = () => {}, callTool = () => {}) {
     );
     params.append(details);
     root.append(params);
-    if (q.status === "requires_confirmation" && q.confirmation_url) {
+    if (
+      confirmationCard &&
+      (q.status === "requires_confirmation" || d.confirmation_demo)
+    ) {
+      confirmationCard(root, q, d.confirmation_demo === true);
+    } else if (q.status === "requires_confirmation" && q.confirmation_url) {
       const b = el("button", "Open Ride confirmation");
       b.addEventListener("click", () => openLink(q.confirmation_url));
       root.append(b);

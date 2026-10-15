@@ -11,6 +11,7 @@ import type { Express } from "express";
 import { z } from "zod";
 import { AgentError, failure, publicResult, output } from "./contracts.js";
 import type { PrivyAuthorizationInput, RideAuthPageConfig } from "../oauth.js";
+import { MemoryHumanHandoffs, type HumanHandoffs } from "./human_handoffs.js";
 
 export function mountHumanConfirmation(
   app: Express,
@@ -19,6 +20,8 @@ export function mountHumanConfirmation(
     base: string;
     cookieKey: string;
     auth: RideAuthPageConfig;
+    handoffs?: HumanHandoffs;
+    frameAncestors?: string[];
     exchange: (
       input: PrivyAuthorizationInput,
     ) => Promise<{ rideAuthToken: string }>;
@@ -29,7 +32,24 @@ export function mountHumanConfirmation(
       "Human session cookie key must contain at least 32 characters",
     );
   const key = createHash("sha256").update(options.cookieKey).digest(),
-    origin = new URL(options.base).origin;
+    origin = new URL(options.base).origin,
+    handoffs = options.handoffs ?? new MemoryHumanHandoffs();
+  const proposalId = z.string().regex(/^proposal_[a-zA-Z0-9_-]{8,100}$/);
+  const browserCookie = "ride_agent_human",
+    embedCookie = "ride_agent_embedded";
+  const requireOrigin = (req: import("express").Request) => {
+    if (req.get("origin") !== origin)
+      throw new AgentError(
+        "ORIGIN_REQUIRED",
+        "Ride browser origin is required.",
+        false,
+        403,
+      );
+  };
+  const cookies = (req: import("express").Request) =>
+    Object.fromEntries(
+      (req.headers.cookie ?? "").split(";").map((x) => x.trim().split("=")),
+    );
   const seal = (v: unknown) => {
     const iv = randomBytes(12),
       cipher = createCipheriv("aes-256-gcm", key, iv),
@@ -47,8 +67,20 @@ export function mountHumanConfirmation(
           decipher.final(),
         ]).toString(),
       );
-      if (s.expires_at < Date.now()) throw 0;
-      return s as { token: string; csrf: string; expires_at: number };
+      if (
+        typeof s.token !== "string" ||
+        !s.token ||
+        typeof s.csrf !== "string" ||
+        !Number.isFinite(s.expires_at) ||
+        s.expires_at <= Date.now()
+      )
+        throw 0;
+      return s as {
+        token: string;
+        csrf: string;
+        expires_at: number;
+        embedded?: boolean;
+      };
     } catch {
       throw new AgentError(
         "AUTH_REQUIRED",
@@ -58,6 +90,149 @@ export function mountHumanConfirmation(
       );
     }
   };
+  const sessionFor = (req: import("express").Request) => {
+    const embedded = req.get("x-ride-embedded") === "1";
+    const raw = cookies(req)[embedded ? embedCookie : browserCookie] ?? "";
+    const session = unseal(raw);
+    if (!!session.embedded !== embedded)
+      throw new AgentError("AUTH_REQUIRED", "Sign in to Ride.", false, 401);
+    return { session, raw };
+  };
+  const checkCsrf = (req: import("express").Request, csrf: string) => {
+    const given = Buffer.from(req.get("x-ride-csrf") ?? ""),
+      expected = Buffer.from(csrf);
+    if (given.length !== expected.length || !timingSafeEqual(given, expected))
+      throw new AgentError(
+        "CSRF_REQUIRED",
+        "Refresh the Ride sign-in session.",
+        false,
+        403,
+      );
+  };
+  // A same-origin read restores the anti-CSRF token without exposing the Core JWT
+  // or renewing the original 15-minute human session.
+  app.post("/agent/human/session", (req, res) => {
+    try {
+      requireOrigin(req);
+      const { session } = sessionFor(req);
+      res
+        .set("Cache-Control", "no-store")
+        .json({ csrf: session.csrf, expires_at: session.expires_at });
+    } catch (e) {
+      res.status(e instanceof AgentError ? e.httpStatus : 400).json(failure(e));
+    }
+  });
+  app.post("/agent/human/embed-ticket", async (req, res) => {
+    try {
+      requireOrigin(req);
+      if (req.get("x-ride-embedded"))
+        throw new AgentError("AUTH_REQUIRED", "Open Ride sign-in.", false, 401);
+      const { session, raw } = sessionFor(req);
+      checkCsrf(req, session.csrf);
+      const input = z
+        .object({
+          proposal_id: proposalId,
+          challenge: z.string().regex(/^[a-f0-9]{64}$/),
+        })
+        .strict()
+        .parse(req.body);
+      const ticket = await handoffs.issue({
+        ...input,
+        session: raw,
+        expires_at: Math.min(session.expires_at, Date.now() + 60_000),
+      });
+      res.set("Cache-Control", "no-store").json({ ticket });
+    } catch (e) {
+      res.status(e instanceof AgentError ? e.httpStatus : 400).json(failure(e));
+    }
+  });
+  app.post("/agent/human/embed-session", async (req, res) => {
+    try {
+      requireOrigin(req);
+      const input = z
+        .object({
+          ticket: z.string().regex(/^[a-zA-Z0-9_-]{43}$/),
+          proposal_id: proposalId,
+          challenge: z.string().regex(/^[a-f0-9]{64}$/),
+        })
+        .strict()
+        .parse(req.body);
+      const handoff = await handoffs.consume(input.ticket);
+      if (
+        !handoff ||
+        handoff.challenge !== input.challenge ||
+        handoff.proposal_id !== input.proposal_id
+      )
+        throw new AgentError(
+          "AUTH_REQUIRED",
+          "Ride sign-in handoff expired. Reopen sign-in.",
+          false,
+          401,
+        );
+      const session = unseal(handoff.session);
+      const embedded = {
+        ...session,
+        embedded: true,
+        csrf: randomBytes(32).toString("base64url"),
+      };
+      res.cookie(embedCookie, seal(embedded), {
+        httpOnly: true,
+        secure: true,
+        sameSite: "none",
+        partitioned: true,
+        path: "/agent",
+        maxAge: Math.max(0, session.expires_at - Date.now()),
+      });
+      res
+        .set("Cache-Control", "no-store")
+        .json({ csrf: embedded.csrf, expires_at: embedded.expires_at });
+    } catch (e) {
+      res.status(e instanceof AgentError ? e.httpStatus : 400).json(failure(e));
+    }
+  });
+  app.get(["/agent/card/:proposalId", "/agent/card-demo"], async (req, res) => {
+    const demo = req.path === "/agent/card-demo";
+    if (!demo && !proposalId.safeParse(req.params.proposalId).success) {
+      res.status(404).end();
+      return;
+    }
+    const template = await readFile(
+      fileURLToPath(new URL("../../public/confirm.html", import.meta.url)),
+      "utf8",
+    );
+    const ancestors = options.frameAncestors ?? [
+      "'self'",
+      "https://chatgpt.com",
+      "https://*.chatgpt.com",
+      "https://*.oaiusercontent.com",
+      "codex-sandbox://*.web-sandbox.oaiusercontent.com",
+    ];
+    if (ancestors.some((x) => /[;\r\n]/.test(x)))
+      throw Error("Invalid card frame ancestor");
+    // Only the dedicated card route can be framed; existing confirmation,
+    // OAuth, funding, App and API routes retain DENY/frame-ancestors none.
+    res.removeHeader("X-Frame-Options");
+    res.set(
+      "Content-Security-Policy",
+      `base-uri 'self'; frame-ancestors ${ancestors.join(" ")}; object-src 'none'`,
+    );
+    res
+      .set("Cache-Control", "no-store")
+      .type("html")
+      .send(
+        template.replace(
+          "/*CONFIG*/{}",
+          JSON.stringify({
+            proposal_id: req.params.proposalId,
+            embedded: true,
+            demo,
+            privy_app_id: options.auth.privyAppId,
+            privy_client_id: options.auth.privyClientId,
+            privy_sdk: options.auth.jsSdkUrl,
+          }).replaceAll("<", "\\u003c"),
+        ),
+      );
+  });
   app.get("/agent/confirm/:proposalId", async (req, res) => {
     if (!/^proposal_[a-zA-Z0-9_-]{8,100}$/.test(req.params.proposalId)) {
       res.status(404).end();
@@ -132,7 +307,7 @@ export function mountHumanConfirmation(
       const exchanged = await options.exchange(input),
         csrf = randomBytes(32).toString("base64url");
       res.cookie(
-        "ride_agent_human",
+        browserCookie,
         seal({
           token: exchanged.rideAuthToken,
           csrf,
@@ -192,21 +367,17 @@ export function mountHumanConfirmation(
             false,
             403,
           );
-        const cookies = Object.fromEntries(
-          (req.headers.cookie ?? "").split(";").map((x) => x.trim().split("=")),
-        );
-        const session = unseal(cookies.ride_agent_human ?? ""),
-          given = Buffer.from(req.get("x-ride-csrf") ?? ""),
-          expected = Buffer.from(session.csrf);
+        const { session } = sessionFor(req);
+        checkCsrf(req, session.csrf);
         if (
-          given.length !== expected.length ||
-          !timingSafeEqual(given, expected)
+          session.embedded &&
+          !["proposal", "confirm", "reject"].includes(req.params.operation)
         )
           throw new AgentError(
-            "CSRF_REQUIRED",
-            "Refresh the Ride sign-in session.",
+            "NOT_FOUND",
+            "This operation is unavailable in a confirmation card.",
             false,
-            403,
+            404,
           );
         token = session.token;
       }
