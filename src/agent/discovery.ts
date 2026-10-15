@@ -7,6 +7,7 @@ import {
   uid,
   cash,
   D,
+  maximumUserLeverage,
   type Candidate,
   type Plan,
 } from "./domain.js";
@@ -198,6 +199,9 @@ export function conversationView(
       plan?.allocations.map((a) => ({
         ...traderRow(a.trader),
         amount_usdc: a.amount_usdc,
+        leverage_mode: a.leverage_mode ?? "cap",
+        leverage_cap: a.leverage_cap,
+        maximum_leverage_cap: maximumUserLeverage(a.trader),
         reason: `Copy Score ${a.trader.score}; ${a.trader.style}; ${a.trader.assets.join("/")}; ${plan.allocations.length === 1 ? "single-trader concentration" : `capital spread across ${plan.allocations.length} selected traders`}.`,
       })) ?? [],
     candidate_table: candidates.slice(0, 5).map(traderRow),
@@ -213,8 +217,19 @@ export function conversationView(
       type: "Positive Perps USDC allocation; live venue minimums apply to each sized order, not to allocated collateral. Prediction allocation rules are unchanged.",
       order_minimum_validation:
         "after_netting_and_quantity_rounding_at_execution",
-      leverage_mode: "cap",
-      follow_source_leverage_supported: false,
+      leverage_mode: plan?.allocations.some(
+        (a) => a.leverage_mode === "follow_source",
+      )
+        ? "follow_source"
+        : "cap",
+      follow_source_leverage_supported: true,
+      follow_source_requires_risk_cap: false,
+      follow_source_requires_venue_limits: true,
+      risk_controls_required: true,
+      maximum_agent_leverage: null,
+      maximum_custom_leverage_cap: 40,
+      default_perps_leverage_cap: null,
+      custom_leverage_cap_supported: true,
     },
     final_review: plan
       ? {
@@ -242,6 +257,8 @@ export function conversationView(
             amount_usdc: a.amount_usdc,
             copy_mode: a.copy_mode ?? "ride_recommends",
             leverage_cap: a.leverage_cap,
+            leverage_mode: a.leverage_mode ?? "cap",
+            maximum_leverage_cap: maximumUserLeverage(a.trader),
             stop_loss_pct: a.stop_loss_pct,
             loss_policy: a.loss_policy ?? "exit",
             emergency_exit_pct: a.emergency_exit_pct ?? null,
@@ -252,6 +269,6 @@ export function conversationView(
         }
       : null,
     instruction:
-      "Show two compact chat tables: recommended portfolio (trader, amount, reason) and top 5 candidates (ID, score, assets, style, history). Disclose defaults and suggested risk settings. Offer accept/customize; browse_traders pages or compares without replacing the plan. No funding needed for this preview. Missing history is unavailable. Best means prioritized within current conditions, not highest guaranteed returns.",
+      "Show two compact chat tables: recommended portfolio (trader, amount, reason) and top 5 candidates (ID, score, assets, style, history). A follow_source allocation with leverage_cap null follows verified source leverage without an extra user cap by default; say this explicitly. A numeric cap is user-editable independently of the recommendation (Perps 1–40x), and null clears it. Actual leverage still respects the approved optional cap, fresh venue limits, budget and risk checks. Never invent a 3x or 10x default cap. Disclose defaults and risk settings. Offer accept/customize; browse_traders pages or compares without replacing the plan. No funding needed for this preview. Missing history is unavailable. Best means prioritized within current conditions, not highest guaranteed returns.",
   };
 }

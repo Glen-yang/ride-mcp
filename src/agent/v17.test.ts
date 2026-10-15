@@ -71,7 +71,17 @@ it("single and 2–8 trader plans require explicit new preferences; legacy plans
     /explicit|Select/,
   );
   const low = recommend({ ...pref, risk_tolerance: "low" }, adapter.pool);
-  assert.ok(low.allocations.every((a) => a.leverage_cap <= 3));
+  assert.ok(
+    low.allocations.every(
+      (a) => a.leverage_cap === null && a.leverage_mode === "follow_source",
+    ),
+  );
+  const oldLow = recommend({ ...legacy, risk_tolerance: "low" }, adapter.pool);
+  assert.ok(
+    oldLow.allocations.every(
+      (a) => a.leverage_cap != null && a.leverage_cap <= 3,
+    ),
+  );
 });
 it("legacy page inputs preserve edited plans without one-free-change limits and isolate accounts", async () => {
   const { api, adapter, repo } = env();

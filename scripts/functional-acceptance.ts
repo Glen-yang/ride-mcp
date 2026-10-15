@@ -879,7 +879,17 @@ try {
     venue.reset();
     const c = await oauth("authority");
     await ok(c.client, "set_preferences", pref);
-    const plan = (await ok(c.client, "recommend_traders")).data.plan;
+    const uncappedPlan = (await ok(c.client, "recommend_traders")).data.plan;
+    const plan = (
+      await ok(c.client, "recalculate_plan", {
+        plan_id: uncappedPlan.id,
+        allocations: uncappedPlan.allocations.map((a: any) => ({
+          trader_id: a.trader.id,
+          amount_usdc: a.amount_usdc,
+          leverage_cap: 8,
+        })),
+      })
+    ).data.plan;
     await approve(
       "authority",
       (await ok(c.client, "start_copy", reviewStart(plan))).data.proposal,
@@ -1489,7 +1499,9 @@ try {
       assert.ok(
         v17Plan.allocations.every(
           (a: any) =>
-            a.leverage_cap <= 5 && a.loss_policy === "pause_then_exit",
+            a.leverage_cap === null &&
+            a.leverage_mode === "follow_source" &&
+            a.loss_policy === "pause_then_exit",
         ),
       );
       return {

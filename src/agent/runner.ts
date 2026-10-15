@@ -288,9 +288,20 @@ export class AgentRunner {
                 true,
               );
             s.last_source_at = source.observed_at;
+            const leverageRules =
+              s.leverage_mode == null
+                ? undefined
+                : fingerprint(
+                    source.positions.map((x) => [
+                      x.key,
+                      snap.max_leverages[x.key] ?? null,
+                    ]),
+                  );
             if (
               source.revision === s.source_revision &&
-              s.copy_mode !== "fixed"
+              s.copy_mode !== "fixed" &&
+              (leverageRules == null ||
+                leverageRules === s.leverage_rules_revision)
             )
               continue;
             const trial = structuredClone(p),
@@ -330,7 +341,7 @@ export class AgentRunner {
                   (x) => x.key === fill.key,
                 );
                 const leverage = Math.min(
-                  t.leverage_cap,
+                  t.leverage_cap ?? Number.POSITIVE_INFINITY,
                   position?.source_leverage ??
                     t.intents[fill.key]?.source_leverage ??
                     1,
@@ -393,14 +404,41 @@ export class AgentRunner {
                   "Current source and follower prices are required.",
                   true,
                 );
+              const newPolicy = t.leverage_mode != null && x.market === "perps";
+              const zeroSource = D(x.quantity).isZero();
+              if (
+                newPolicy &&
+                !zeroSource &&
+                (x.source_leverage_verified === false ||
+                  !Number.isInteger(x.source_leverage) ||
+                  x.source_leverage < 1)
+              )
+                throw new AgentError(
+                  "SOURCE_LEVERAGE_UNAVAILABLE",
+                  "Verified source leverage is required before following a Perps position.",
+                  true,
+                );
+              if (
+                newPolicy &&
+                !zeroSource &&
+                (!Number.isFinite(snap.max_leverages[x.key]) ||
+                  snap.max_leverages[x.key] < 1)
+              )
+                throw new AgentError(
+                  "VENUE_RULES_UNAVAILABLE",
+                  "A fresh per-asset venue leverage limit is required.",
+                  true,
+                );
+              const sourceLeverage =
+                newPolicy && zeroSource ? 1 : x.source_leverage;
               const leverage = Math.min(
-                t.leverage_cap,
-                x.source_leverage,
+                t.leverage_cap ?? Number.POSITIVE_INFINITY,
+                sourceLeverage,
                 snap.max_leverages[x.key] ?? 1,
               );
               let quantity = D(x.quantity)
                 .times(D(t.amount_usdc).div(source.account_value_usdc))
-                .times(D(leverage).div(Math.max(1, x.source_leverage)))
+                .times(D(leverage).div(Math.max(1, sourceLeverage)))
                 .times(t.proportional_multiplier ?? 1);
               if (t.copy_mode === "fixed") {
                 const previousSource = D(t.source_quantities?.[x.key] ?? 0),
@@ -546,6 +584,8 @@ export class AgentRunner {
             if (t.copy_mode === "fixed")
               t.fixed_last_fill_at = source.observed_at;
             t.source_revision = source.revision;
+            if (leverageRules != null)
+              t.leverage_rules_revision = leverageRules;
             const sleeveProfit = profit.sleeves.find(
               (x) => x.copy_id === s.copy_id,
             )?.net_usdc;
@@ -668,12 +708,18 @@ export class AgentRunner {
                   Math.max(
                     1,
                     Math.min(
-                      8,
+                      p.sleeves.some((s) => s.leverage_mode != null)
+                        ? Number.POSITIVE_INFINITY
+                        : 8,
+                      ...(p.sleeves.some((s) => s.leverage_mode != null) &&
+                      key.startsWith("perps:")
+                        ? [snap.max_leverages[key] ?? 1]
+                        : []),
                       ...p.sleeves
                         .filter((s) => s.intents[key])
                         .map((s) =>
                           Math.min(
-                            s.leverage_cap,
+                            s.leverage_cap ?? Number.POSITIVE_INFINITY,
                             s.intents[key].source_leverage,
                           ),
                         ),

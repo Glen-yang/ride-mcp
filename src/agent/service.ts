@@ -17,6 +17,8 @@ import {
   recommend,
   assetAllowed,
   recommendedLeverage,
+  defaultLeverageMode,
+  maximumUserLeverage,
   minimumAllocation,
   eligibleCandidates,
   recommendationDiagnostics,
@@ -252,7 +254,11 @@ export class AgentService {
               if (
                 total.gt(pref.budget_usdc) ||
                 D(old.amount_usdc).lt(minimumAllocation(pref, a.trader)) ||
-                old.leverage_cap > a.leverage_cap
+                (old.leverage_cap != null &&
+                  old.leverage_cap >
+                    (old.leverage_mode === "custom_cap"
+                      ? (maximumUserLeverage(a.trader) ?? 0)
+                      : (a.leverage_cap ?? Number.POSITIVE_INFINITY)))
               )
                 throw new AgentError(
                   "ALLOCATION_REVIEW_REQUIRED",
@@ -261,6 +267,7 @@ export class AgentService {
               Object.assign(a, {
                 amount_usdc: old.amount_usdc,
                 leverage_cap: old.leverage_cap,
+                leverage_mode: old.leverage_mode,
                 stop_loss_pct: old.stop_loss_pct,
               });
               for (const key of [
@@ -308,7 +315,10 @@ export class AgentService {
                 limits: planningPool.map((c) => ({
                   trader_id: c.id,
                   minimum_usdc: cash(minimumAllocation(pref, c)),
-                  leverage_cap: recommendedLeverage(pref, c),
+                  leverage_cap:
+                    defaultLeverageMode(pref, c) === "follow_source"
+                      ? null
+                      : recommendedLeverage(pref, c),
                 })),
               },
               message:
@@ -365,7 +375,11 @@ export class AgentService {
                 recommendation_diagnostics: diagnostics,
                 candidate_limits: eligibleCandidates(pref, pool).map((c) => ({
                   trader_id: c.id,
-                  leverage_cap: recommendedLeverage(pref, c),
+                  leverage_cap:
+                    defaultLeverageMode(pref, c) === "follow_source"
+                      ? null
+                      : recommendedLeverage(pref, c),
+                  maximum_leverage_cap: maximumUserLeverage(c),
                 })),
                 candidates_meta: {
                   total: eligibleCandidates(pref, pool).length,
@@ -420,7 +434,11 @@ export class AgentService {
             candidates: eligibleCandidates(pref, pool),
             candidate_limits: eligibleCandidates(pref, pool).map((c) => ({
               trader_id: c.id,
-              leverage_cap: recommendedLeverage(pref, c),
+              leverage_cap:
+                defaultLeverageMode(pref, c) === "follow_source"
+                  ? null
+                  : recommendedLeverage(pref, c),
+              maximum_leverage_cap: maximumUserLeverage(c),
             })),
             portfolio_historical_drawdown_pct: null,
             compatibility: compatibility(plan),
@@ -436,7 +454,7 @@ export class AgentService {
               : {}),
             reasons: plan.allocations.map((x) => ({
               trader_id: x.trader.id,
-              reason: `Copy Score ${x.trader.score}; source drawdown ${x.trader.source_drawdown_pct}%; ${x.trader.assets.join("/")}; ${x.trader.style}; ${x.trader.direction}; allocation ${x.amount_usdc} USDC, leverage cap ${x.leverage_cap}x.`,
+              reason: `Copy Score ${x.trader.score}; source drawdown ${x.trader.source_drawdown_pct}%; ${x.trader.assets.join("/")}; ${x.trader.style}; ${x.trader.direction}; allocation ${x.amount_usdc} USDC, ${x.leverage_cap == null ? "follow source leverage without an extra user cap" : `user leverage cap ${x.leverage_cap}x`}.`,
             })),
           },
           "ok",
@@ -594,7 +612,7 @@ export class AgentService {
           }))) as {
           trader_id: string;
           amount_usdc: string;
-          leverage_cap?: number;
+          leverage_cap?: number | null;
           stop_loss_pct?: number;
           copy_mode?: "ride_recommends" | "fixed" | "proportional";
           fixed_margin_usdc?: string;
@@ -641,23 +659,60 @@ export class AgentService {
             "Allocations exceed the requested budget.",
           );
         plan.allocations = requested.map((x, i) => {
-          const cap = recommendedLeverage(pref, pool[i])!;
           const prior = previous.allocations.find(
             (a) => a.trader.id === x.trader_id,
           );
-          const leverage = x.leverage_cap ?? prior?.leverage_cap ?? cap;
           const settings = {
             ...prior,
             ...((args.preferences as Partial<Preferences>) ?? {}),
             ...x,
           };
+          const modeChanged =
+            (x.copy_mode ??
+              (args.preferences as Partial<Preferences> | undefined)
+                ?.copy_mode) != null &&
+            settings.copy_mode !==
+              (prior?.copy_mode ?? previous.preferences.copy_mode);
+          const capEdited =
+            args.allocations != null && x.leverage_cap !== undefined;
+          const leverageMode =
+            pool[i].market === "prediction"
+              ? "cap"
+              : capEdited && x.leverage_cap === null
+                ? "follow_source"
+                : capEdited
+                  ? "custom_cap"
+                  : prior && !modeChanged
+                    ? (prior.leverage_mode ?? "cap")
+                    : defaultLeverageMode(
+                        {
+                          ...pref,
+                          copy_mode: settings.copy_mode ?? pref.copy_mode,
+                        },
+                        pool[i],
+                      );
+          const cap =
+            leverageMode === "custom_cap"
+              ? maximumUserLeverage(pool[i])
+              : recommendedLeverage(pref, pool[i], leverageMode);
+          const leverage =
+            x.leverage_cap !== undefined
+              ? x.leverage_cap
+              : prior
+                ? prior.leverage_cap
+                : leverageMode === "follow_source"
+                  ? null
+                  : cap;
           if (
-            leverage > cap ||
+            cap == null ||
+            (leverage == null
+              ? leverageMode !== "follow_source"
+              : leverage > cap) ||
             (pool[i].market === "prediction" && leverage !== 1)
           )
             throw new AgentError(
               "INVALID_LEVERAGE",
-              "Selected leverage exceeds the current trader, market or risk cap.",
+              "Perps leverage caps must use the App-supported 1–40x range; Prediction requires 1x.",
             );
           if (
             D(x.amount_usdc).lt(minimumAllocation(pref, pool[i])) ||
@@ -672,6 +727,7 @@ export class AgentService {
             ...plan.allocations.find((a) => a.trader.id === x.trader_id)!,
             amount_usdc: cash(x.amount_usdc),
             leverage_cap: leverage,
+            leverage_mode: leverageMode === "cap" ? undefined : leverageMode,
             stop_loss_pct: x.stop_loss_pct ?? prior?.stop_loss_pct ?? 30,
             copy_mode: settings.copy_mode ?? pref.copy_mode,
             fixed_margin_usdc:
@@ -713,7 +769,11 @@ export class AgentService {
             candidates,
             candidate_limits: candidates.map((c) => ({
               trader_id: c.id,
-              leverage_cap: recommendedLeverage(pref, c),
+              leverage_cap:
+                defaultLeverageMode(pref, c) === "follow_source"
+                  ? null
+                  : recommendedLeverage(pref, c),
+              maximum_leverage_cap: maximumUserLeverage(c),
             })),
             compatibility: compatibility(plan),
             alternatives: alternatives(plan, candidates),
@@ -813,6 +873,9 @@ export class AgentService {
               current_configuration: {
                 amount_usdc: sleeve.amount_usdc,
                 leverage_cap: sleeve.leverage_cap,
+                ...(sleeve.leverage_mode
+                  ? { leverage_mode: sleeve.leverage_mode }
+                  : {}),
                 stop_loss_pct: sleeve.stop_loss_pct,
               },
               funding: (p.funding_receipts ?? []).filter(
@@ -1089,9 +1152,14 @@ export class AgentService {
                 ...p.sleeves
                   .filter((s) => s.intents[a.key])
                   .map((s) =>
-                    Math.min(s.leverage_cap, s.intents[a.key].source_leverage),
+                    Math.min(
+                      s.leverage_cap ?? Number.POSITIVE_INFINITY,
+                      s.intents[a.key].source_leverage,
+                    ),
                   ),
-                8,
+                p.sleeves.some((s) => s.leverage_mode != null)
+                  ? (snapshot.max_leverages[a.key] ?? 1)
+                  : 8,
               ),
             ),
           ),
@@ -1224,7 +1292,7 @@ export class AgentService {
         D(input.daily_usdc).gt(input.total_usdc) ||
         D(input.total_usdc).gt(p.preferences.budget_usdc) ||
         input.leverage_cap < 1 ||
-        input.leverage_cap > 8
+        input.leverage_cap > 40
       )
         throw new AgentError(
           "INVALID_AUTHORITY",
@@ -1264,6 +1332,7 @@ export class AgentService {
         .every(
           (s) =>
             d.markets.includes(s.trader.market) &&
+            s.leverage_cap != null &&
             s.leverage_cap <= d.leverage_cap &&
             s.trader.assets.every((a) => d.assets.includes(a)),
         ) &&
@@ -1413,8 +1482,16 @@ export class AgentService {
       allowed.length !== plan.allocations.length ||
       plan.allocations.some(
         (a, i) =>
-          a.leverage_cap >
-            (recommendedLeverage(plan.preferences, rows[i]) ?? 0) ||
+          (a.leverage_cap == null
+            ? a.leverage_mode !== "follow_source"
+            : a.leverage_cap >
+              ((a.leverage_mode === "custom_cap"
+                ? maximumUserLeverage(rows[i])
+                : recommendedLeverage(
+                    plan.preferences,
+                    rows[i],
+                    a.leverage_mode ?? "cap",
+                  )) ?? 0)) ||
           D(a.amount_usdc).lt(
             plan.preferences.portfolio_kind && rows[i].market === "perps"
               ? minimumAllocation(plan.preferences, rows[i])
@@ -1495,7 +1572,14 @@ export class AgentService {
         const trader = await this.adapter.profile(
           args.replacement_trader_id as string,
         );
-        const replacementCap = recommendedLeverage(p.preferences, trader);
+        const replacementCap =
+          s.leverage_mode === "custom_cap"
+            ? maximumUserLeverage(trader)
+            : recommendedLeverage(
+                p.preferences,
+                trader,
+                s.leverage_mode ?? "cap",
+              );
         if (
           !eligibleCandidates(
             p.preferences,
@@ -1529,7 +1613,10 @@ export class AgentService {
           );
         const replacement: Sleeve = {
           ...s,
-          leverage_cap: Math.min(s.leverage_cap, replacementCap),
+          leverage_cap:
+            s.leverage_cap == null
+              ? null
+              : Math.min(s.leverage_cap, replacementCap),
           copy_id: String(args.replacement_copy_id ?? uid("copy")),
           trader,
           state: "active",
@@ -1573,15 +1660,21 @@ export class AgentService {
             "Prediction positions require leverage 1.",
           );
         const current = await this.adapter.profile(s.trader.id);
-        const allowed = recommendedLeverage(p.preferences, current);
+        const allowed = maximumUserLeverage(current);
         if ((args.leverage_cap as number) > (allowed ?? 0))
           throw new AgentError(
             "INVALID_LEVERAGE",
-            "Leverage exceeds the current trader, venue or portfolio risk cap.",
+            "Perps leverage caps must use the App-supported 1–40x range; Prediction requires 1x.",
           );
-        s.leverage_cap = args.leverage_cap as number;
+        s.leverage_cap = args.leverage_cap as number | null;
+        if (s.trader.market === "perps")
+          s.leverage_mode =
+            s.leverage_cap == null ? "follow_source" : "custom_cap";
         for (const x of Object.values(s.intents)) {
-          const leverage = Math.min(s.leverage_cap, x.source_leverage);
+          const leverage = Math.min(
+            s.leverage_cap ?? Number.POSITIVE_INFINITY,
+            x.source_leverage,
+          );
           x.quantity = D(x.quantity)
             .times(leverage)
             .div(x.source_leverage)
@@ -1773,6 +1866,7 @@ export function portfolioView(p: Portfolio): Result {
           trader: s.trader,
           amount_usdc: s.amount_usdc,
           leverage_cap: s.leverage_cap,
+          ...(s.leverage_mode ? { leverage_mode: s.leverage_mode } : {}),
           stop_loss_pct: s.stop_loss_pct,
           state: s.state,
           net_profit_usdc:

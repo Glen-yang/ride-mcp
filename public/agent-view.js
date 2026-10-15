@@ -36,7 +36,17 @@ function sleeveCards(
       el("span", `${s.trader?.market ?? ""} · ${s.trader?.style ?? ""}`, "tag"),
       row("Copy Score", s.trader?.score),
       row("Allocation", usdc(s.amount_usdc)),
-      row("Leverage cap", s.leverage_cap == null ? null : `${s.leverage_cap}x`),
+      ...(s.leverage_mode != null
+        ? [row("Leverage mode", "Follow source leverage")]
+        : []),
+      row(
+        s.leverage_mode != null ? "Your leverage cap" : "Leverage cap",
+        s.leverage_cap == null && s.leverage_mode === "follow_source"
+          ? "No extra cap"
+          : s.leverage_cap == null
+            ? null
+            : `${s.leverage_cap}x`,
+      ),
       row(
         s.loss_policy === "pause_then_exit"
           ? "Pause new exposure"
@@ -339,7 +349,7 @@ export function render(
     root.append(
       el(
         "p",
-        "Leverage follows the selected risk tolerance and verified venue limits. A single-trader plan is concentrated. Review each trader’s pause/exit rules before confirming.",
+        "Perps follows source leverage with no extra user cap by default. You can set or clear your cap; exchange limits, budget and risk checks still apply. A single-trader plan is concentrated. Review each trader’s pause/exit rules before confirming.",
         "muted",
       ),
     );
@@ -444,13 +454,21 @@ export function render(
           "text",
           s.amount_usdc,
         ),
-        leverage = field(controls, "Leverage cap", "number", s.leverage_cap),
+        leverage = field(
+          controls,
+          "Leverage cap · optional",
+          "number",
+          s.leverage_cap ?? "",
+        ),
         pause = field(
           controls,
           "Trader pause/exit threshold · %",
           "number",
           s.stop_loss_pct,
         );
+      leverage.min = "1";
+      leverage.max = s.trader?.market === "prediction" ? "1" : "40";
+      leverage.placeholder = "No extra cap · follow source";
       const mode = select(
         controls,
         "Copy mode",
@@ -494,7 +512,8 @@ export function render(
         callTool("update_copy", {
           copy_id: s.copy_id,
           amount_usdc: margin.value.trim(),
-          leverage_cap: Number(leverage.value),
+          leverage_cap:
+            leverage.value.trim() === "" ? null : Number(leverage.value),
           stop_loss_pct: Number(pause.value),
           copy_mode: mode.value,
           ...(mode.value === "fixed"
@@ -973,8 +992,11 @@ function planEditor(plan, data, callTool, start) {
     rows = el("div", null, "grid"),
     editors = [];
   const candidates = data.candidates ?? plan.allocations.map((a) => a.trader);
-  const limits = new Map(
-    (data.candidate_limits ?? []).map((x) => [x.trader_id, x.leverage_cap]),
+  const maximumLimits = new Map(
+    (data.candidate_limits ?? []).map((x) => [
+      x.trader_id,
+      x.maximum_leverage_cap,
+    ]),
   );
   const dirty = () => {
     start.dataset.dirty = "true";
@@ -983,7 +1005,7 @@ function planEditor(plan, data, callTool, start) {
   };
   const note = el(
     "p",
-    "Current parameters are validated by Ride. Capital weights are not live exposure.",
+    "Perps defaults to following source leverage with no extra user cap. Leave the cap empty for this default, or set 1–40x like the App. Live exchange limits, budget and risk checks still apply. Recalculate changes before confirming.",
     "muted",
   );
   function add(a) {
@@ -999,9 +1021,18 @@ function planEditor(plan, data, callTool, start) {
     );
     const amount = field(r, "Allocation · USDC", "text", a.amount_usdc);
     amount.inputMode = "decimal";
-    const leverage = field(r, "Leverage cap", "number", a.leverage_cap);
+    const leverage = field(
+      r,
+      "Leverage cap · optional",
+      "number",
+      a.leverage_cap ?? "",
+    );
+    leverage.placeholder = "No extra cap · follow source";
     leverage.min = "1";
-    leverage.max = "8";
+    leverage.max = String(
+      maximumLimits.get(a.trader.id) ??
+        (a.trader.market === "prediction" ? 1 : 40),
+    );
     const loss = field(r, "Sleeve loss trigger · %", "number", a.stop_loss_pct);
     loss.min = "1";
     loss.max = "100";
@@ -1057,9 +1088,13 @@ function planEditor(plan, data, callTool, start) {
     editors.push(editor);
     r.addEventListener("input", dirty);
     trader.addEventListener("change", () => {
-      leverage.value = String(
-        Math.min(Number(leverage.value), limits.get(trader.value) ?? 1),
-      );
+      const selected = candidates.find((t) => t.id === trader.value);
+      const maximum =
+        maximumLimits.get(trader.value) ??
+        (selected?.market === "prediction" ? 1 : 40);
+      leverage.max = String(maximum);
+      if (selected?.market === "prediction" || leverage.value.trim() !== "")
+        leverage.value = String(Math.min(Number(leverage.value), maximum));
       dirty();
     });
     const remove = el("button", "Remove", "secondary");
@@ -1107,7 +1142,7 @@ function planEditor(plan, data, callTool, start) {
     add({
       trader,
       amount_usdc: trader.market === "perps" ? "" : "50",
-      leverage_cap: limits.get(trader.id) ?? 1,
+      leverage_cap: trader.market === "prediction" ? 1 : null,
       stop_loss_pct: 30,
     });
     dirty();
@@ -1120,7 +1155,8 @@ function planEditor(plan, data, callTool, start) {
       allocations: editors.map((e) => ({
         trader_id: e.trader.value,
         amount_usdc: e.amount.value.trim(),
-        leverage_cap: Number(e.leverage.value),
+        leverage_cap:
+          e.leverage.value.trim() === "" ? null : Number(e.leverage.value),
         stop_loss_pct: Number(e.loss.value),
         copy_mode: e.mode.value,
         ...(e.mode.value === "fixed"
@@ -1413,7 +1449,7 @@ function addToPlan(plan, trader, data, callTool) {
     const allocation = plan.allocations[0];
     const limit =
       data.candidate_limits?.find((x) => x.trader_id === trader.id)
-        ?.leverage_cap ?? 1;
+        ?.maximum_leverage_cap ?? (trader.market === "prediction" ? 1 : 40);
     callTool("recalculate_plan", {
       plan_id: plan.id,
       preferences: plan.preferences,
@@ -1421,7 +1457,12 @@ function addToPlan(plan, trader, data, callTool) {
         {
           trader_id: trader.id,
           amount_usdc: allocation.amount_usdc,
-          leverage_cap: Math.min(allocation.leverage_cap, limit),
+          leverage_cap:
+            trader.market === "prediction"
+              ? 1
+              : allocation.leverage_cap == null
+                ? null
+                : Math.min(allocation.leverage_cap, limit),
           stop_loss_pct: allocation.stop_loss_pct,
           ...copyParameters(allocation),
         },
@@ -1440,9 +1481,7 @@ function addToPlan(plan, trader, data, callTool) {
     ...plan.allocations,
     {
       trader,
-      leverage_cap:
-        data.candidate_limits?.find((x) => x.trader_id === trader.id)
-          ?.leverage_cap ?? (trader.market === "prediction" ? 1 : 3),
+      leverage_cap: trader.market === "prediction" ? 1 : null,
       stop_loss_pct: 30,
       ...copyParameters(plan.preferences),
     },
@@ -1626,7 +1665,8 @@ function renderDiagnostic(root, d) {
       r.quantity,
       r.fill.price,
       r.fee_usdc,
-      r.config?.leverage_cap,
+      r.config?.leverage_cap ??
+        (r.config?.leverage_mode === "follow_source" ? "No extra cap" : null),
     ]),
   );
   c.append(el("h2", "Entry decisions"));
@@ -1638,7 +1678,8 @@ function renderDiagnostic(root, d) {
       x.key,
       x.reason,
       x.target_quantity,
-      x.config.leverage_cap,
+      x.config.leverage_cap ??
+        (x.config.leverage_mode === "follow_source" ? "No extra cap" : null),
     ]),
   );
   c.append(el("h2", "Execution and funding evidence"));

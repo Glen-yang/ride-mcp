@@ -121,7 +121,7 @@ export const inputs = {
             .object({
               trader_id: id,
               amount_usdc: positiveMoney,
-              leverage_cap: z.number().int().min(1).max(8).optional(),
+              leverage_cap: z.number().int().min(1).max(40).nullable().optional(),
               stop_loss_pct: z.number().min(1).max(100).optional(),
               ...copySettings,
             })
@@ -172,7 +172,7 @@ export const inputs = {
     .object({
       copy_id: id,
       amount_usdc: positiveMoney.optional(),
-      leverage_cap: z.number().int().min(1).max(8).optional(),
+      leverage_cap: z.number().int().min(1).max(40).nullable().optional(),
       stop_loss_pct: z.number().min(1).max(100).optional(),
       replacement_trader_id: id.optional(),
       resume_new_trades: z.boolean().optional(),

@@ -152,7 +152,7 @@ describe("financial invariants", () => {
     assert.ok(
       plan.allocations.every(
         (a) =>
-          a.trader.source_drawdown_pct! * a.leverage_cap <=
+          a.trader.source_drawdown_pct! * (a.leverage_cap ?? 1) <=
           pref.loss_trigger_pct,
       ),
     );

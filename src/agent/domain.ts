@@ -29,6 +29,8 @@ export const now = () => Date.now();
 export const fresh = (at: number, ttl = 30_000) =>
   Number.isFinite(at) && at <= now() + 1000 && now() - at <= ttl;
 export type Venue = "perps" | "prediction";
+// Match the existing App's editable Perps Auto-Ride setting.
+export const PERPS_COPY_MAX_LEVERAGE = 40;
 export interface Candidate {
   metric_window?: { start_at: number; end_at: number; basis: string };
   metric_provenance?: {
@@ -75,7 +77,9 @@ export interface Allocation {
   copy_id: string;
   trader: Candidate;
   amount_usdc: string;
-  leverage_cap: number;
+  leverage_cap: number | null;
+  // Missing on frozen/approved capped plans; never infer a policy upgrade.
+  leverage_mode?: "follow_source" | "custom_cap";
   stop_loss_pct: number;
   copy_mode?: "ride_recommends" | "fixed" | "proportional";
   fixed_margin_usdc?: string;
@@ -103,6 +107,7 @@ export interface PositionIntent {
   price: string;
   source_entry_price: string | null;
   source_leverage: number;
+  source_leverage_verified?: boolean;
   observed_at: number;
   source_revision: string;
 }
@@ -132,6 +137,7 @@ export interface Sleeve extends Allocation {
   last_source_at: number | null;
   replaced_at: number | null;
   reviewed_at?: number;
+  leverage_rules_revision?: string;
   source_quantities?: Record<string, string>;
   fixed_targets?: Record<string, string>;
   fixed_seen_fills?: string[];
@@ -278,9 +284,20 @@ export function allocate(budget: Decimal.Value, count: number): string[] {
       .toFixed(6),
   );
 }
+export function defaultLeverageMode(p: Preferences, c: Candidate) {
+  return c.market === "perps" && p.portfolio_kind != null
+    ? ("follow_source" as const)
+    : ("cap" as const);
+}
+// A suggestion is not the maximum a user may explicitly approve.
+export function maximumUserLeverage(c: Candidate): number | null {
+  if (c.market === "prediction") return 1;
+  return PERPS_COPY_MAX_LEVERAGE;
+}
 export function recommendedLeverage(
   p: Preferences,
   c: Candidate,
+  mode: "cap" | "follow_source" = defaultLeverageMode(p, c),
 ): number | null {
   const drawdown = c.source_drawdown_pct;
   if (drawdown == null || !Number.isFinite(drawdown) || drawdown < 0)
@@ -288,12 +305,21 @@ export function recommendedLeverage(
   const riskCap =
     drawdown === 0 ? 8 : Math.floor(p.loss_trigger_pct / drawdown);
   if (c.market === "prediction") return riskCap >= 1 ? 1 : null;
+  const toleranceCap =
+    p.risk_tolerance === "low" ? 3 : p.risk_tolerance === "medium" ? 5 : 8;
+  if (mode === "follow_source") {
+    if (!Number.isFinite(c.venue_max_leverage) || c.venue_max_leverage < 1)
+      return null;
+    // Validate planning evidence only. New allocations have no extra user cap;
+    // runtime verifies each source position and fresh per-asset venue limit.
+    const cap = Math.floor(c.venue_max_leverage);
+    return cap >= 1 ? cap : null;
+  }
+  // Preserve existing capped plans and explicitly selected copy modes.
   const atrCap =
     c.atr_pct == null
       ? 3
       : Math.max(3, Math.min(8, Math.floor(12 / Math.max(c.atr_pct, 0.01))));
-  const toleranceCap =
-    p.risk_tolerance === "low" ? 3 : p.risk_tolerance === "medium" ? 5 : 8;
   const cap = Math.min(c.venue_max_leverage, atrCap, riskCap, toleranceCap);
   return cap >= 3 ? cap : null;
 }
@@ -446,7 +472,13 @@ export function recommend(p: Preferences, candidates: Candidate[]): Plan {
       copy_id: uid("copy"),
       trader: c,
       amount_usdc: amounts[i],
-      leverage_cap: recommendedLeverage(p, c)!,
+      leverage_cap:
+        defaultLeverageMode(p, c) === "follow_source"
+          ? null
+          : recommendedLeverage(p, c)!,
+      ...(defaultLeverageMode(p, c) === "follow_source"
+        ? { leverage_mode: "follow_source" as const }
+        : {}),
       stop_loss_pct: 30,
       ...(p.copy_mode ? { copy_mode: p.copy_mode } : {}),
       ...(p.fixed_margin_usdc
@@ -748,7 +780,11 @@ export function aggregate(
         .plus(notional)
         .toString();
       a.margin_usdc = D(a.margin_usdc)
-        .plus(notional.div(Math.max(1, Math.min(s.leverage_cap, leverage))))
+        .plus(
+          notional.div(
+            Math.max(1, Math.min(s.leverage_cap ?? leverage, leverage)),
+          ),
+        )
         .toString();
       a.sleeve_ids.push(s.copy_id);
       out.set(x.key, a);
@@ -785,7 +821,16 @@ export function risk(
   const margin = next.reduce((n, a) => n.plus(a.margin_usdc), D(0));
   const budget = D(p.preferences.budget_usdc);
   // A sleeve reserves its gross margin even when another sleeve offsets it.
-  if (gross.gt(budget.times(8)) || margin.gt(budget))
+  const uncapped = p.sleeves.some(
+    (s) => s.leverage_mode === "follow_source" && s.leverage_cap == null,
+  );
+  const approvedLeverage = p.sleeves.some((s) => s.leverage_mode != null)
+    ? Math.max(1, ...p.sleeves.map((s) => s.leverage_cap ?? 1))
+    : 8;
+  if (
+    (!uncapped && gross.gt(budget.times(approvedLeverage))) ||
+    margin.gt(budget)
+  )
     throw new AgentError(
       "BUDGET_EXCEEDED",
       "Target gross exposure or gross margin exceeds the approved budget.",

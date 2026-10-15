@@ -144,7 +144,8 @@ for (const [price, sourceQuantity, minimum, submitted, reason] of [
       assert.equal(p.preferences.budget_usdc, "20");
       assert.equal(p.preferences.loss_trigger_pct, 20);
       assert.equal(p.sleeves[0].amount_usdc, "20.000000");
-      assert.equal(p.sleeves[0].leverage_cap, 3);
+      assert.equal(p.sleeves[0].leverage_cap, null);
+      assert.equal(p.sleeves[0].leverage_mode, "follow_source");
       assert.ok(
         p.decisions?.some((d) => d.reason === reason),
         JSON.stringify(state.updates),

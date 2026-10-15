@@ -239,7 +239,7 @@ export function backendApp(
                 .array(z.string().regex(/^[A-Z][A-Z0-9]{0,15}$/))
                 .min(1)
                 .max(20),
-              leverage_cap: z.number().int().min(1).max(8),
+              leverage_cap: z.number().int().min(1).max(40),
             })
             .strict()
             .parse(req.body);

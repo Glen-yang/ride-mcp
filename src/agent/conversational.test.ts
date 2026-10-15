@@ -134,7 +134,7 @@ it("validates changed selections, exact amounts, concentration, risk caps and pr
   assert.throws(() =>
     inputs.recalculate_plan.parse({
       plan_id: plan.id,
-      allocations: allocations.map((a: any) => ({ ...a, leverage_cap: 10 })),
+      allocations: allocations.map((a: any) => ({ ...a, leverage_cap: 41 })),
     }),
   );
 });

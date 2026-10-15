@@ -24,6 +24,7 @@ import {
   fingerprint,
   now,
   fresh,
+  PERPS_COPY_MAX_LEVERAGE,
   type Candidate,
   type AccountSnapshot,
   type Portfolio,
@@ -323,6 +324,10 @@ export class CoreBridge {
         price: D(x.positionValue).abs().div(D(x.szi).abs()).toString(),
         source_entry_price: x.entryPx ?? null,
         source_leverage: Number(x.leverage?.value ?? 1),
+        source_leverage_verified:
+          x.leverage?.value != null &&
+          Number.isFinite(Number(x.leverage.value)) &&
+          Number(x.leverage.value) >= 1,
         observed_at: at,
         source_revision: "",
       }));
@@ -443,7 +448,7 @@ export class CoreBridge {
       }
       if (returns.length) atr = Math.max(...returns);
     } catch {
-      /* Conservative 3x recommendation when ATR cannot be verified. */
+      /* Missing ATR stays unavailable; new Ride recommendations follow source leverage. */
     }
     return {
       id,
@@ -492,7 +497,9 @@ export class CoreBridge {
           ? null
           : D(row.drawdown_ratio).abs().times(100).toNumber(),
       atr_pct: atr,
-      venue_max_leverage: 8,
+      // Planning envelope matches the App setting. The execution snapshot
+      // separately verifies the current per-asset exchange limit.
+      venue_max_leverage: PERPS_COPY_MAX_LEVERAGE,
       min_notional_usdc: HYPERLIQUID_MIN_OPEN_NOTIONAL_USDC,
       last_trade_at: (() => {
         const at =
@@ -995,13 +1002,35 @@ export class CoreBridge {
     snap: AccountSnapshot,
   ): Promise<void> {
     const base = { user_id: user, account_id: this.perpsBinding(p) };
+    const perps = p.sleeves.filter(
+      (s) => s.trader.market === "perps" && s.state !== "closed",
+    );
+    if (!perps.length) return;
+    const policyLeverage = Math.max(
+      ...perps.map((s) => {
+        if (s.leverage_cap != null) return s.leverage_cap;
+        const limits = s.trader.assets.map(
+          (a) => snap.max_leverages[`perps:${a}`],
+        );
+        if (
+          !limits.length ||
+          limits.some((limit) => !Number.isInteger(limit) || limit < 1)
+        )
+          throw new AgentError(
+            "VENUE_RULES_UNAVAILABLE",
+            "Fresh per-asset leverage limits are required.",
+            true,
+          );
+        return Math.max(...limits);
+      }),
+    );
     const exposure = D.min(
-      800,
+      policyLeverage * 100,
       p.sleeves
         .filter((s) => s.trader.market === "perps" && s.state !== "closed")
         .reduce((n, s) => n.plus(s.amount_usdc), D(0))
         .div(snap.account_value_usdc)
-        .times(Math.max(...p.sleeves.map((s) => s.leverage_cap)))
+        .times(policyLeverage)
         .times(100),
     );
     const assets = [
@@ -1015,7 +1044,7 @@ export class CoreBridge {
       ...base,
       assets,
       max_total_position_pct: exposure.toFixed(4),
-      max_leverage: Math.max(...p.sleeves.map((s) => s.leverage_cap)),
+      max_leverage: policyLeverage,
       request_id: `${p.id}:policy:${p.control_id ?? p.revision}`,
       fingerprint: fingerprint([p.id, p.revision, assets, exposure.toFixed(4)]),
     };
@@ -1141,6 +1170,18 @@ export class CoreBridge {
         if (!increases) continue;
         const intent = s.intents[e.key];
         if (
+          s.leverage_mode != null &&
+          (intent.source_leverage_verified === false ||
+            !Number.isInteger(intent.source_leverage) ||
+            intent.source_leverage < 1 ||
+            !Number.isFinite(snap.max_leverages[e.key]) ||
+            intent.source_leverage > snap.max_leverages[e.key])
+        )
+          throw new AgentError(
+            "EXECUTION_REJECTED",
+            "Verified leverage rules changed; recalculate the target before increasing exposure.",
+          );
+        if (
           !fresh(intent.observed_at) ||
           D(price).minus(intent.price).abs().div(intent.price).gt(".002")
         )
@@ -1182,11 +1223,14 @@ export class CoreBridge {
         leverage: Math.max(
           1,
           Math.min(
-            8,
+            snap.max_leverages[e.key] ?? 1,
             ...p.sleeves
               .filter((s) => s.intents[e.key])
               .map((s) =>
-                Math.min(s.leverage_cap, s.intents[e.key].source_leverage),
+                Math.min(
+                  s.leverage_cap ?? Number.POSITIVE_INFINITY,
+                  s.intents[e.key].source_leverage,
+                ),
               ),
           ),
         ),

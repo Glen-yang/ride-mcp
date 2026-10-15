@@ -53,6 +53,7 @@ export const configAt = (s: Sleeve) => ({
   trader_id: s.trader.id,
   amount_usdc: s.amount_usdc,
   leverage_cap: s.leverage_cap,
+  ...(s.leverage_mode ? { leverage_mode: s.leverage_mode } : {}),
   stop_loss_pct: s.stop_loss_pct,
   copy_mode: s.copy_mode ?? "ride_recommends",
   fixed_margin_usdc: s.fixed_margin_usdc ?? null,
