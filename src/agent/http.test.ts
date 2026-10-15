@@ -229,3 +229,131 @@ it("public human gateway accepts native Core JWTs while preserving browser CSRF 
     backend.close();
   }
 });
+
+it("Apple browser login keeps the original Ride account and enforces cookie/CSRF and proposal ownership", async () => {
+  const repo = new MemoryRepository();
+  const adapter = new FakeAdapter();
+  const { candidate } = await import("./fixtures.js");
+  adapter.pool = [1, 2, 3, 4, 5, 6].map(candidate);
+  const service = new AgentService(
+    repo,
+    adapter,
+    "https://ride.test",
+    new Cursor("a".repeat(32)),
+  );
+  await service.tool("original-apple-user", "set_preferences", {
+    budget_usdc: "500",
+    loss_trigger_pct: 20,
+    market: "perps",
+    assets: ["BTC", "ETH"],
+    allow_altcoins: false,
+  });
+  const plan: any = (
+    await service.tool("original-apple-user", "recommend_traders", {})
+  ).data.plan;
+  const proposal: any = (
+    await service.tool("original-apple-user", "start_copy", {
+      plan_id: plan.id,
+    })
+  ).data.proposal;
+  const backend = backendApp(service, async (token) => {
+    if (token === "core-original") return "original-apple-user";
+    if (token === "core-other") return "other-user";
+    throw new AgentError("AUTH_REQUIRED", "Invalid Core token", false, 401);
+  }).listen(0, "127.0.0.1");
+  await once(backend, "listening");
+  const b = backend.address();
+  assert(b && typeof b !== "string");
+  const app = express();
+  app.use(express.json());
+  const identities: any[] = [];
+  mountHumanConfirmation(app, {
+    backend: `http://127.0.0.1:${b.port}`,
+    base: "https://ride.test",
+    cookieKey: "k".repeat(32),
+    auth: {
+      manualTokenAuthEnabled: false,
+      privyAppId: "original-app",
+      privyClientId: "",
+      jsSdkUrl: "https://sdk.test/privy.js",
+    },
+    exchange: async (input) => {
+      identities.push(input);
+      assert.equal(input.authProvider, "APPLE");
+      if (input.privyAccessToken !== "verified-token")
+        throw new AgentError(
+          "AUTH_REQUIRED",
+          "Invalid Privy token",
+          false,
+          401,
+        );
+      return {
+        rideAuthToken:
+          input.privyId === "did:privy:original"
+            ? "core-original"
+            : "core-other",
+      };
+    },
+  });
+  const gateway = app.listen(0, "127.0.0.1");
+  await once(gateway, "listening");
+  const g = gateway.address();
+  assert(g && typeof g !== "string");
+  const base = `http://127.0.0.1:${g.port}`;
+  const login = (
+    privyId: string,
+    token = "verified-token",
+    origin = "https://ride.test",
+  ) =>
+    fetch(base + "/agent/human/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Origin: origin },
+      body: JSON.stringify({
+        privyId,
+        privyAccessToken: token,
+        authProvider: "APPLE",
+      }),
+    });
+  try {
+    assert.equal(
+      (await login("did:privy:original", "verified-token", "https://evil.test"))
+        .status,
+      403,
+    );
+    const invalid = await login("did:privy:original", "bad-token");
+    assert.equal(invalid.status, 401);
+    assert.equal(invalid.headers.get("set-cookie"), null);
+    for (const [id, expected] of [
+      ["did:privy:original", 200],
+      ["did:privy:other", 404],
+    ] as const) {
+      const response = await login(id);
+      assert.equal(response.status, 200);
+      const cookie = response.headers.get("set-cookie")!;
+      assert.match(cookie, /HttpOnly/);
+      assert.match(cookie, /Secure/);
+      assert.match(cookie, /SameSite=Strict/);
+      const { csrf } = await response.json();
+      const inspect = (extra: Record<string, string>) =>
+        fetch(base + "/agent/human/proposal", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Origin: "https://ride.test",
+            Cookie: cookie.split(";")[0],
+            ...extra,
+          },
+          body: JSON.stringify({ proposal_id: proposal.id }),
+        });
+      assert.equal((await inspect({})).status, 403);
+      const resource = await inspect({ "X-Ride-CSRF": csrf });
+      assert.equal(resource.status, expected);
+      if (expected === 200)
+        assert.equal((await resource.json()).data.proposal.id, proposal.id);
+    }
+    assert.equal(identities.at(-1).privyId, "did:privy:other");
+  } finally {
+    gateway.close();
+    backend.close();
+  }
+});

@@ -1,3 +1,11 @@
+import {
+  startPrivyOAuth,
+  completePrivyOAuth,
+  hasOAuthCallback,
+  loginInput,
+  setLoginBusy,
+  formatAuthError,
+} from "/auth/privy/runtime.js";
 let client, csrf, user, funding;
 const status = document.getElementById("status"),
   content = document.getElementById("content");
@@ -13,10 +21,20 @@ const micros = (amount) => {
   return BigInt(whole) * 1000000n + BigInt(fraction.padEnd(6, "0"));
 };
 const showError = (e) => {
-  status.textContent = e?.message ?? String(e);
+  status.textContent = formatAuthError(e);
   status.className = "warning error";
 };
-async function init() {
+let initialization;
+function init() {
+  if (initialization) return initialization;
+  initialization = initializeClient().catch((error) => {
+    client = undefined;
+    initialization = undefined;
+    throw error;
+  });
+  return initialization;
+}
+async function initializeClient() {
   if (client) return client;
   const { default: Privy, LocalStorage } = await import(config.privy_sdk);
   const iframe = document.createElement("iframe");
@@ -37,7 +55,7 @@ async function init() {
   const walletUrl = new URL(client.embeddedWallet.getURL());
   if (walletUrl.protocol !== "https:")
     throw Error("Secure wallet origin unavailable.");
-  window.addEventListener("message", (e) => {
+  const onMessage = (e) => {
     if (e.source !== iframe.contentWindow || e.origin !== walletUrl.origin)
       return;
     try {
@@ -47,10 +65,17 @@ async function init() {
     } catch {
       /* Unrelated frame message. */
     }
-  });
+  };
+  window.addEventListener("message", onMessage);
   iframe.src = walletUrl.href;
   document.body.append(iframe);
-  await client.initialize();
+  try {
+    await client.initialize();
+  } catch (error) {
+    window.removeEventListener("message", onMessage);
+    iframe.remove();
+    throw error;
+  }
   return client;
 }
 async function call(operation, body = {}) {
@@ -227,61 +252,54 @@ async function check() {
     content.append(b);
   }
 }
-async function finish(session) {
+async function finish(session, provider) {
   const c = await init();
   user = session?.user ?? (await c.user.get()).user;
   if (!user) return;
-  const accounts = user.linked_accounts ?? user.linkedAccounts ?? [];
-  const wallet = accounts.find(
-    (w) =>
-      w.type === "wallet" &&
-      (w.chain_type ?? w.chainType) === "ethereum" &&
-      (w.wallet_client_type ?? w.walletClientType) === "privy",
+  const login = await call(
+    "login",
+    loginInput(
+      user,
+      await c.getAccessToken(),
+      provider,
+      sessionStorage.getItem("ride:agent:access-code"),
+    ),
   );
-  const login = await call("login", {
-    privyId: user.id,
-    privyAccessToken: await c.getAccessToken(),
-    walletAddress: wallet?.address,
-    privyWalletId: wallet?.id,
-    authProvider: "GOOGLE",
-    accessCode: sessionStorage.getItem("ride:agent:access-code") ?? undefined,
-  });
   csrf = login.csrf;
   sessionStorage.removeItem("ride:agent:access-code");
-  document.getElementById("login").hidden = true;
   display(await call("funding"));
+  document.getElementById("login").hidden = true;
   await check();
 }
-document.getElementById("sign-in").onclick = async () => {
-  try {
-    const c = await init();
-    sessionStorage.setItem("ride:mcp:oauth_authorize_url", location.href);
-    sessionStorage.setItem(
-      "ride:agent:access-code",
-      document.getElementById("access-code").value,
-    );
-    const out = await c.auth.oauth.generateURL(
-      "google",
-      `${location.origin}/auth/privy/oauth/callback`,
-    );
-    location.assign(out.url);
-  } catch (e) {
-    showError(e);
-  }
-};
-const query = new URL(location.href).searchParams;
+for (const [id, provider] of [
+  ["sign-in", "google"],
+  ["sign-in-apple", "apple"],
+]) {
+  document.getElementById(id).onclick = async () => {
+    try {
+      setLoginBusy(true);
+      sessionStorage.removeItem("ride:agent:access-code");
+      if (provider === "google")
+        sessionStorage.setItem(
+          "ride:agent:access-code",
+          document.getElementById("access-code").value.trim(),
+        );
+      await startPrivyOAuth(await init(), provider);
+    } catch (e) {
+      showError(e);
+      setLoginBusy(false);
+    }
+  };
+}
+setLoginBusy(true);
 try {
-  const c = await init();
-  if (query.get("privy_oauth_code") && query.get("privy_oauth_state")) {
-    const session = await c.auth.oauth.loginWithCode(
-      query.get("privy_oauth_code"),
-      query.get("privy_oauth_state"),
-      "google",
-    );
-    history.replaceState({}, "", location.pathname);
-    await finish(session);
-  } else if (query.has("error")) showError(Error("Ride login declined."));
-  else await finish();
+  if (hasOAuthCallback()) {
+    setLoginBusy(true);
+    const result = await completePrivyOAuth(await init());
+    await finish(result.session, result.provider);
+  } else await finish();
 } catch (e) {
   showError(e);
+} finally {
+  setLoginBusy(false);
 }

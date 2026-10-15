@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import express from "express";
+import { readFile } from "node:fs/promises";
 import type { Request, Response } from "express";
 import { createClient, type RedisClientType } from "redis";
 
@@ -687,6 +688,11 @@ export function createRideOAuthApprovalRouter(provider: RideOAuthProvider): expr
   router.use(express.json({ limit: "32kb" }));
   router.use(express.urlencoded({ extended: false, limit: "32kb" }));
 
+  router.get("/auth/privy/runtime.js", async (_req: Request, res: Response) => {
+    const source = await readFile(new URL("../public/privy-auth.js", import.meta.url), "utf8");
+    res.set("Cache-Control", "no-cache").type("application/javascript").send(source);
+  });
+
   router.get("/auth/privy/oauth/callback", (_req: Request, res: Response) => {
     res.status(200).type("html").send(renderPrivyOAuthCallbackPage());
   });
@@ -845,7 +851,9 @@ function renderAuthorizePage(
   };
   const hiddenInputs = Object.entries(fields)
     .map(([name, value]) =>
-      value ? `<input type="hidden" name="${escapeHtml(name)}" value="${escapeHtml(value)}">` : "",
+      value
+        ? `<input type="hidden" name="${escapeHtml(name)}" value="${escapeHtml(value)}">`
+        : "",
     )
     .join("\n      ");
   const oauthPayload = JSON.stringify(fields).replaceAll("<", "\\u003c");
@@ -944,6 +952,8 @@ function renderAuthorizePage(
       border-color: #c7d0d9;
       color: #394b59;
     }
+    button.apple { width: 100%; background: #000; color: #fff; }
+    #google-form .actions { flex-direction: column; }
     button.google {
       width: 100%;
       display: flex;
@@ -1011,8 +1021,9 @@ function renderAuthorizePage(
           <span class="google-mark">G</span>
           Continue with Google
         </button>
+        <button id="apple-login" class="apple" type="button">Continue with Apple</button>
       </div>
-      <div id="status" class="status">Continue with Google to connect your Ride account.</div>
+      <div id="status" class="status" aria-live="polite">Sign in with the same Apple or Google account you use in Ride. Apple sign-in is for existing Ride accounts.</div>
     </form>
 
     ${
@@ -1036,6 +1047,7 @@ function renderAuthorizePage(
   </main>
   <script type="module">
     import Privy, {LocalStorage} from '${escapeJs(config.jsSdkUrl)}';
+    import {startPrivyOAuth, completePrivyOAuth, hasOAuthCallback, loginInput, embeddedEthereumWallet, setLoginBusy, formatAuthError} from '/auth/privy/runtime.js';
 
     const config = {
       privyAppId: '${escapeJs(config.privyAppId)}',
@@ -1054,22 +1066,6 @@ function renderAuthorizePage(
     function setStatus(message, isError = false) {
       statusEl.textContent = message;
       statusEl.classList.toggle('error', isError);
-    }
-
-    function formatAuthError(error) {
-      const message = error?.message || String(error);
-      if (message.includes('Redirect URL is not allowed')) {
-        return 'Redirect URL is not allowed. Add ' + window.location.origin + '/auth/privy/oauth/callback in Privy Advanced -> Allowed OAuth redirect URLs.';
-      }
-      if (error?.name === 'AbortError' || error?.name === 'TimeoutError' || /aborted|timed? ?out/i.test(message)) {
-        return 'The connection to Privy timed out. Check your network or proxy, then retry Continue with Google. Your account has not been changed.';
-      }
-      return message;
-    }
-
-    function setBusy(button, busy) {
-      button.disabled = busy;
-      button.style.opacity = busy ? '0.65' : '1';
     }
 
     async function initPrivy() {
@@ -1097,51 +1093,8 @@ function renderAuthorizePage(
       return privyInitialization;
     }
 
-    function linkedAccounts(user) {
-      const camel = Array.isArray(user?.linkedAccounts) ? user.linkedAccounts : [];
-      const snake = Array.isArray(user?.linked_accounts) ? user.linked_accounts : [];
-      return camel.length ? camel : snake;
-    }
-
-    function accountValue(account, camelKey, snakeKey) {
-      return account?.[camelKey] ?? account?.[snakeKey];
-    }
-
-    function getEmailFromUser(user) {
-      if (typeof user?.email === 'string') return user.email;
-      if (typeof user?.email?.address === 'string') return user.email.address;
-      if (typeof user?.emailAddress === 'string') return user.emailAddress;
-      const accounts = linkedAccounts(user);
-      const emailAccount = accounts.find((account) =>
-        account?.email || account?.address || account?.emailAddress || account?.email_address
-      );
-      return emailAccount?.email || emailAccount?.address || emailAccount?.emailAddress || emailAccount?.email_address || undefined;
-    }
-
-    function getEmbeddedEthereumWallet(user) {
-      const accounts = linkedAccounts(user);
-      const wallets = accounts.filter((account) => {
-        const chainType = accountValue(account, 'chainType', 'chain_type');
-        return (
-          account?.type === 'wallet' &&
-          chainType === 'ethereum' &&
-          account?.address &&
-          (
-            accountValue(account, 'walletClientType', 'wallet_client_type') === 'privy' ||
-            accountValue(account, 'connectorType', 'connector_type') === 'embedded'
-          )
-        );
-      });
-      wallets.sort((a, b) => {
-        const left = accountValue(a, 'walletIndex', 'wallet_index') ?? 0;
-        const right = accountValue(b, 'walletIndex', 'wallet_index') ?? 0;
-        return Number(left) - Number(right);
-      });
-      return wallets[0];
-    }
-
     async function ensureEmbeddedEthereumWallet(client, user) {
-      let wallet = getEmbeddedEthereumWallet(user);
+      let wallet = embeddedEthereumWallet(user);
       if (wallet) return {user, wallet};
 
       if (!client.embeddedWallet?.add) {
@@ -1151,7 +1104,7 @@ function renderAuthorizePage(
       setStatus('Creating Ride wallet...');
       const result = await client.embeddedWallet.add({chainType: 'ethereum'});
       const refreshedUser = result?.user || (await client.user.get()).user || user;
-      wallet = getEmbeddedEthereumWallet(refreshedUser);
+      wallet = embeddedEthereumWallet(refreshedUser);
       if (!wallet?.address) {
         throw new Error('Privy did not return an embedded wallet address.');
       }
@@ -1162,83 +1115,51 @@ function renderAuthorizePage(
       return accessCodeInput.value.trim() || sessionStorage.getItem(ACCESS_CODE_KEY) || undefined;
     }
 
-    async function approveWithPrivy(user, privyAccessToken, wallet, authProvider) {
+    async function approveWithPrivy(user, token, provider) {
+      const input = loginInput(user, token, provider, getStoredAccessCode());
       const response = await fetch('/auth/privy/approve', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({
-          ...config.oauth,
-          privy_id: user.id,
-          privy_access_token: privyAccessToken,
-          email: getEmailFromUser(user),
-          wallet_address: wallet?.address,
-          privy_wallet_id: wallet?.id,
-          auth_provider: authProvider,
-          access_code: getStoredAccessCode()
-        })
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ ...config.oauth, privy_id: input.privyId,
+          privy_access_token: input.privyAccessToken, email: input.email, wallet_address: input.walletAddress,
+          privy_wallet_id: input.privyWalletId, auth_provider: input.authProvider,
+          access_code: input.accessCode })
       });
       const payload = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        throw new Error(payload.message || 'Ride authorization failed.');
-      }
+      if (!response.ok) throw new Error(payload.message || 'Ride authorization failed.');
       sessionStorage.removeItem(ACCESS_CODE_KEY);
       window.location.assign(payload.redirectUrl);
     }
-
-    async function finishPrivySession(session, authProvider) {
+    async function finishPrivySession(session, provider) {
       const client = await initPrivy();
       let user = session?.user || (await client.user.get()).user;
       if (!user?.id) throw new Error('Privy login did not return a user.');
-      const walletResult = await ensureEmbeddedEthereumWallet(client, user);
-      user = walletResult.user;
+      if (provider === 'google') user = (await ensureEmbeddedEthereumWallet(client, user)).user;
       setStatus('Getting Ride authorization...');
-      const privyAccessToken = await client.getAccessToken();
-      if (!privyAccessToken) throw new Error('Could not get Privy access token.');
-      await approveWithPrivy(user, privyAccessToken, walletResult.wallet, authProvider);
+      await approveWithPrivy(user, await client.getAccessToken(), provider);
     }
-
-    function googleRedirectUrl() {
-      return window.location.origin + '/auth/privy/oauth/callback';
+    for (const [id, provider] of [['google-login', 'google'], ['apple-login', 'apple']]) {
+      document.getElementById(id).addEventListener('click', async () => {
+        try {
+          setLoginBusy(true);
+          setStatus('Starting ' + (provider === 'apple' ? 'Apple' : 'Google') + ' login...');
+          sessionStorage.removeItem(ACCESS_CODE_KEY);
+          const accessCode = accessCodeInput.value.trim();
+          if (provider === 'google' && accessCode) sessionStorage.setItem(ACCESS_CODE_KEY, accessCode);
+          await startPrivyOAuth(await initPrivy(), provider);
+        } catch (error) { setStatus(formatAuthError(error), true); setLoginBusy(false); }
+      });
     }
-
-    async function handleGoogleCallback() {
-      const url = new URL(window.location.href);
-      const authorizationCode = url.searchParams.get('privy_oauth_code');
-      const stateCode = url.searchParams.get('privy_oauth_state');
-      if (!authorizationCode && !stateCode) return;
-      if (!authorizationCode || !stateCode) {
-        throw new Error('Google login returned incomplete OAuth credentials.');
-      }
-      setStatus('Completing Google login...');
-      const client = await initPrivy();
-      const session = await client.auth.oauth.loginWithCode(
-        authorizationCode,
-        stateCode,
-        'google'
-      );
-      await finishPrivySession(session, 'GOOGLE');
-    }
-
-    googleLoginButton.addEventListener('click', async () => {
+    async function handleLoginCallback() {
+      if (!hasOAuthCallback()) return;
+      setLoginBusy(true);
       try {
-        setBusy(googleLoginButton, true);
-        setStatus('Starting Google login...');
-        const accessCode = accessCodeInput.value.trim();
-        if (accessCode) sessionStorage.setItem(ACCESS_CODE_KEY, accessCode);
-        sessionStorage.setItem('ride:mcp:oauth_authorize_url', window.location.href);
-        const client = await initPrivy();
-        const response = await client.auth.oauth.generateURL('google', googleRedirectUrl());
-        if (!response?.url) throw new Error('Google login URL was not returned.');
-        window.location.assign(response.url);
-      } catch (error) {
-        setStatus(formatAuthError(error), true);
-        setBusy(googleLoginButton, false);
-      }
-    });
-
-    handleGoogleCallback().catch((error) => {
-      setStatus(formatAuthError(error), true);
-    });
+        setStatus('Completing Ride login...');
+        const result = await completePrivyOAuth(await initPrivy());
+        await finishPrivySession(result.session, result.provider);
+      } catch (error) { setStatus(formatAuthError(error), true); }
+      finally { setLoginBusy(false); }
+    }
+    handleLoginCallback();
   </script>
 </body>
 </html>`;
@@ -1294,20 +1215,13 @@ function renderPrivyOAuthCallbackPage(): string {
     <h1>Completing Ride Login</h1>
     <p id="status">Returning to Ride authorization...</p>
   </main>
-  <script>
-    const statusEl = document.getElementById('status');
-    const originalAuthorizeUrl = sessionStorage.getItem('ride:mcp:oauth_authorize_url');
-    if (!originalAuthorizeUrl) {
-      statusEl.textContent = 'Missing original Ride authorization request. Please restart authorization from your AI client.';
+  <script type="module">
+    import {relayPrivyOAuthCallback, formatAuthError} from '/auth/privy/runtime.js';
+    try { relayPrivyOAuthCallback(); }
+    catch (error) {
+      const statusEl = document.getElementById('status');
+      statusEl.textContent = formatAuthError(error);
       statusEl.classList.add('error');
-    } else {
-      const currentUrl = new URL(window.location.href);
-      const target = new URL(originalAuthorizeUrl);
-      for (const key of ['privy_oauth_code', 'privy_oauth_state', 'error', 'error_description']) {
-        const value = currentUrl.searchParams.get(key);
-        if (value) target.searchParams.set(key, value);
-      }
-      window.location.replace(target.toString());
     }
   </script>
 </body>
@@ -1324,5 +1238,8 @@ function escapeHtml(value: string): string {
 }
 
 function escapeJs(value: string): string {
-  return value.replaceAll("\\", "\\\\").replaceAll("'", "\\'").replaceAll("\n", "\\n");
+  return value
+    .replaceAll("\\", "\\\\")
+    .replaceAll("'", "\\'")
+    .replaceAll("\n", "\\n");
 }
