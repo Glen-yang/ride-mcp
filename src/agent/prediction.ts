@@ -1,6 +1,7 @@
 import pg from "pg";
 import { JsonRpcProvider, Contract, Interface } from "ethers";
 import { AgentError } from "./contracts.js";
+import { PredictionHistory } from "./prediction_history.js";
 import {
   D,
   cash,
@@ -31,6 +32,7 @@ interface Outcome {
 export class PredictionVenue {
   private rpc: JsonRpcProvider | null = null;
   private poolCache: { at: number; rows: any[] } | null = null;
+  private history = new PredictionHistory();
   constructor(
     private pool: pg.Pool,
     private core: Core,
@@ -239,6 +241,13 @@ export class PredictionVenue {
   }
   async profile(id: string): Promise<Candidate> {
     const row = await this.resolve(id);
+    const metrics = await this.history.metrics(row.address);
+    const expiresAt = Math.min(
+      row.expires_at,
+      metrics.metric_window
+        ? metrics.metric_window.end_at + 36 * 3600000
+        : Infinity,
+    );
     // Discovery uses the independently refreshed score snapshot. Live inventory
     // and collateral remain separate source() checks before increasing exposure;
     // requiring them here hides otherwise valid candidates on an RPC outage.
@@ -260,8 +269,8 @@ export class PredictionVenue {
       score_version: row.score_version,
       components,
       scored_at: row.computed_at,
-      expires_at: row.expires_at,
-      eligibility: row.expires_at > now() ? "PASS" : "REJECT",
+      expires_at: expiresAt,
+      eligibility: expiresAt > now() ? "PASS" : "REJECT",
       assets: row.assets
         ?.map((x: string) =>
           x
@@ -273,8 +282,7 @@ export class PredictionVenue {
       style: row.assets?.[0] ?? "prediction",
       direction: "long",
       median_hold_hours: null,
-      source_roi_pct: null,
-      source_drawdown_pct: null,
+      ...metrics,
       atr_pct: null,
       venue_max_leverage: 1,
       min_notional_usdc: "5",
@@ -284,9 +292,10 @@ export class PredictionVenue {
   async candidates(): Promise<Candidate[]> {
     const out: Candidate[] = [];
     const rows = (await this.rows()).slice(0, 20);
-    for (let i = 0; i < rows.length; i += 3) {
+    // Two bounded batches keep cold historical reads inside the bridge deadline.
+    for (let i = 0; i < rows.length; i += 10) {
       const batch = await Promise.allSettled(
-        rows.slice(i, i + 3).map((r: any) => this.profile(this.id(r.address))),
+        rows.slice(i, i + 10).map((r: any) => this.profile(this.id(r.address))),
       );
       for (const r of batch) if (r.status === "fulfilled") out.push(r.value);
     }

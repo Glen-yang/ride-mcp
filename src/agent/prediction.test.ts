@@ -42,6 +42,13 @@ it("browses fresh Prediction scores without requiring live positions or collater
   // The source reader must remain a separate, fail-closed execution check.
   (venue as any).source = async () =>
     assert.fail("Discovery must not read live source inventory");
+  (venue as any).history = {
+    metrics: async () => ({
+      source_roi_pct: null,
+      source_drawdown_pct: null,
+      metric_unavailable_reason: "history_source_unavailable",
+    }),
+  };
   const candidates = await venue.candidates();
   assert.equal(candidates.length, 1);
   const profile = candidates[0];
@@ -57,6 +64,57 @@ it("browses fresh Prediction scores without requiring live positions or collater
   assert.equal(profile.eligibility, "PASS");
   assert(operations.every((op) => op === "prediction_pool"));
   assert.equal(operations.length, 1);
+});
+it("uses validated Prediction history for a 100 USDC two-trader plan and bounds its freshness", async () => {
+  const at = now();
+  const venue = new PredictionVenue(
+    {} as any,
+    async () =>
+      [wallet, other].map((address, i) => ({
+        address,
+        handle: `History ${i}`,
+        score: 95 - i,
+        score_version: "prediction_curated_pool_v1",
+        computed_at: at,
+        expires_at: at + 36 * 3600000,
+        assets: ["SPORTS"],
+      })),
+    "salt",
+  );
+  (venue as any).history = {
+    metrics: async (address: string) => ({
+      source_roi_pct: 2,
+      source_drawdown_pct: address === wallet ? 0.05 : 10.7,
+      metric_window: {
+        start_at: at - 60 * 24 * 3600000,
+        end_at: at - 35 * 3600000,
+        basis: "validated_fixture",
+      },
+    }),
+  };
+  const candidates = await venue.candidates();
+  assert(candidates.every((c) => c.expires_at === at + 3600000));
+  const plan = recommend(
+    {
+      budget_usdc: "100",
+      loss_trigger_pct: 20,
+      market: "prediction",
+      assets: [],
+      allow_altcoins: true,
+      portfolio_kind: "basket",
+      basket_size: 2,
+    },
+    candidates,
+  );
+  assert.equal(plan.allocations.length, 2);
+  assert(
+    plan.allocations.every(
+      (a) =>
+        a.amount_usdc === "50.000000" &&
+        a.leverage_cap === 1 &&
+        a.trader.source_drawdown_pct != null,
+    ),
+  );
 });
 const abi = new Interface([
   "event Transfer(address indexed from,address indexed to,uint256 value)",
