@@ -23,6 +23,32 @@ function env(count = 24) {
     (await api.tool(user, name, args)).data as any;
   return { repo, adapter, api, call };
 }
+it("requests only the chosen market when refreshing recommendation candidates", async () => {
+  const { adapter, call } = env(2);
+  adapter.pool = adapter.pool.map((c) => ({
+    ...c,
+    market: "prediction",
+    venue_max_leverage: 1,
+    assets: ["SPORTS"],
+  }));
+  const requested: unknown[] = [];
+  const original = adapter.candidates.bind(adapter);
+  adapter.candidates = async (market?: "perps" | "prediction" | "both") => {
+    requested.push(market);
+    return original();
+  };
+  const d = await call("recommend_traders", {
+    preferences: {
+      market: "prediction",
+      budget_usdc: "100",
+      loss_trigger_pct: 20,
+      portfolio_kind: "basket",
+      basket_size: 2,
+    },
+  });
+  assert.deepEqual(requested, ["prediction"]);
+  assert.equal(d.plan.allocations.length, 2);
+});
 it("asks only budget and risk, preserves partial answers in either order and never reads candidates early", async () => {
   const { api, call, adapter } = env();
   let reads = 0;

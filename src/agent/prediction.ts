@@ -30,6 +30,7 @@ interface Outcome {
 }
 export class PredictionVenue {
   private rpc: JsonRpcProvider | null = null;
+  private poolCache: { at: number; rows: any[] } | null = null;
   constructor(
     private pool: pg.Pool,
     private core: Core,
@@ -174,6 +175,8 @@ export class PredictionVenue {
     return b;
   }
   async rows() {
+    if (this.poolCache && now() - this.poolCache.at < 30000)
+      return this.poolCache.rows;
     const rows = await this.core("prediction_pool", {});
     if (!Array.isArray(rows))
       throw new AgentError(
@@ -181,6 +184,7 @@ export class PredictionVenue {
         "Prediction pool is unavailable.",
         true,
       );
+    this.poolCache = { at: now(), rows };
     return rows;
   }
   private async resolve(id: string) {
@@ -236,7 +240,7 @@ export class PredictionVenue {
   async profile(id: string): Promise<Candidate> {
     const row = await this.resolve(id);
     // Discovery uses the independently refreshed score snapshot. Live inventory
-    // and collateral are validated by source() when planning/executing exposure;
+    // and collateral remain separate source() checks before increasing exposure;
     // requiring them here hides otherwise valid candidates on an RPC outage.
     const components = Object.fromEntries(
       Object.entries(row.components ?? {}).map(([k, v]) => [

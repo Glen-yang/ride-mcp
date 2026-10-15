@@ -128,7 +128,7 @@ export class AgentService {
             "requires_preferences",
           );
         if (!s.discovery && !args.cursor)
-          saveDiscovery(s, pref, await this.adapter.candidates());
+          saveDiscovery(s, pref, await this.adapter.candidates(pref.market));
         return result(browse(s, pref, args as any, user, this.cursor));
       });
     }
@@ -151,7 +151,7 @@ export class AgentService {
         let pool: Candidate[];
         let sourceReadFailed = false;
         try {
-          pool = await this.adapter.candidates();
+          pool = await this.adapter.candidates(savedPref.market);
         } catch {
           sourceReadFailed = true;
           pool = [];
@@ -697,7 +697,7 @@ export class AgentService {
           );
         if (args.allocations && pref.portfolio_kind)
           s.selected_trader_ids = requested.map((x) => x.trader_id);
-        const sourcePool = await this.adapter.candidates();
+        const sourcePool = await this.adapter.candidates(pref.market);
         const candidates = eligibleCandidates(pref, sourcePool);
         const savedPreferences = completePreferences(s)!;
         saveDiscovery(s, savedPreferences, sourcePool);

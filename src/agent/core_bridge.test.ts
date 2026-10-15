@@ -3,6 +3,71 @@ import assert from "node:assert/strict";
 import { CoreBridge } from "./core_bridge.js";
 import { candidate } from "./fixtures.js";
 import { now } from "./domain.js";
+import { BridgeAdapter } from "./adapter.js";
+
+it("isolates Prediction and Perps discovery and rejects unknown market selectors", async () => {
+  const bridge = new CoreBridge(
+    "https://core.test",
+    "fixture",
+    "postgresql://localhost/unused",
+    "s".repeat(32),
+    "testnet",
+  );
+  const stub = bridge as any;
+  const previous = process.env.RIDE_AGENT_PREDICTION_ENABLED;
+  process.env.RIDE_AGENT_PREDICTION_ENABLED = "true";
+  const prediction = { ...candidate(1), market: "prediction" };
+  stub.rows = async () =>
+    assert.fail("Prediction discovery must not read the Perps pool");
+  stub.prediction.candidates = async () => [prediction];
+  try {
+    assert.deepEqual(
+      await bridge.operation("candidates", { market: "prediction" }),
+      [prediction],
+    );
+    stub.rows = async () => [];
+    stub.prediction.candidates = async () =>
+      assert.fail("Perps discovery must not read the Prediction pool");
+    assert.deepEqual(
+      await bridge.operation("candidates", { market: "perps" }),
+      [],
+    );
+    await assert.rejects(
+      bridge.operation("candidates", { market: "invalid" }),
+      /Unknown candidate market/,
+    );
+  } finally {
+    if (previous === undefined)
+      delete process.env.RIDE_AGENT_PREDICTION_ENABLED;
+    else process.env.RIDE_AGENT_PREDICTION_ENABLED = previous;
+    await bridge.close();
+  }
+});
+
+it("forwards the requested market across the authenticated bridge boundary", async () => {
+  const previous = globalThis.fetch;
+  const bodies: unknown[] = [];
+  globalThis.fetch = (async (_url: unknown, init: RequestInit) => {
+    bodies.push(JSON.parse(String(init.body)));
+    return new Response("[]", {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  }) as typeof fetch;
+  try {
+    const adapter = new BridgeAdapter("http://127.0.0.1", "fixture");
+    await adapter.candidates("prediction");
+    await adapter.candidates("perps");
+    await adapter.candidates();
+    assert.deepEqual(bodies, [
+      { market: "prediction" },
+      { market: "perps" },
+      {},
+    ]);
+  } finally {
+    globalThis.fetch = previous;
+  }
+});
 
 it("reads the real scheduler tradeMetrics timestamp and keeps missing or future activity unavailable", async () => {
   const bridge = new CoreBridge(

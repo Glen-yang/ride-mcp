@@ -38,7 +38,7 @@ export interface VenueAdapter {
   notificationStatus?(
     user: string,
   ): Promise<{ configured: boolean; device_registered: boolean }>;
-  candidates(): Promise<Candidate[]>;
+  candidates(market?: "perps" | "prediction" | "both"): Promise<Candidate[]>;
   profile(id: string): Promise<Candidate>;
   preflight(
     user: string,
@@ -171,8 +171,8 @@ export class BridgeAdapter implements VenueAdapter {
   ) {
     return this.call<any>(`funding_${operation}`, { user_id: user, ...input });
   }
-  candidates() {
-    return this.call<Candidate[]>("candidates", {});
+  candidates(market?: "perps" | "prediction" | "both") {
+    return this.call<Candidate[]>("candidates", market ? { market } : {});
   }
   sourceFills(trader: Candidate, start: number, end: number) {
     return this.call<{

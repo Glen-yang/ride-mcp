@@ -504,7 +504,13 @@ export class CoreBridge {
       })(),
     };
   }
-  async candidates(): Promise<Candidate[]> {
+  async candidates(
+    market: "perps" | "prediction" | "both" = "both",
+  ): Promise<Candidate[]> {
+    if (market === "prediction")
+      return process.env.RIDE_AGENT_PREDICTION_ENABLED === "true"
+        ? this.prediction.candidates()
+        : [];
     const sorted = [...(await this.rows())]
       .filter((r) => r.eligibility === "PASS" && r.expires_at > now())
       .sort((a, b) => Number(b.score) - Number(a.score))
@@ -518,7 +524,10 @@ export class CoreBridge {
       );
       for (const r of batch) if (r.status === "fulfilled") out.push(r.value);
     }
-    if (process.env.RIDE_AGENT_PREDICTION_ENABLED === "true")
+    if (
+      market !== "perps" &&
+      process.env.RIDE_AGENT_PREDICTION_ENABLED === "true"
+    )
       out.push(...(await this.prediction.candidates()));
     return out;
   }
@@ -1308,8 +1317,17 @@ export class CoreBridge {
       case "funding_activate_quote":
       case "funding_activate_submit":
         return this.core(`perps_${op}`, input);
-      case "candidates":
-        return this.candidates();
+      case "candidates": {
+        const market = input?.market ?? "both";
+        if (!["perps", "prediction", "both"].includes(market))
+          throw new AgentError(
+            "INVALID_PREFERENCES",
+            "Unknown candidate market.",
+            false,
+            400,
+          );
+        return this.candidates(market);
+      }
       case "profile":
         return this.profile(input.trader_id);
       case "source":
