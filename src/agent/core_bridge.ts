@@ -13,6 +13,7 @@ import {
 import { DepositReads } from "./deposits.js";
 import { PredictionVenue } from "./prediction.js";
 import { AgentError, failure } from "./contracts.js";
+import { perpsAccountMode, unifiedUsdc } from "./perps_account.js";
 import {
   checkPerpsOrder,
   HYPERLIQUID_MIN_OPEN_NOTIONAL_USDC,
@@ -588,11 +589,12 @@ export class CoreBridge {
       identity = await this.core("perps_wallet", { user_id: user });
       accountId = `account_${fingerprint([user, this.network]).slice(0, 32)}`;
     }
-    const [state, orders, mids, meta] = await Promise.all([
+    const [state, orders, mids, meta, abstraction] = await Promise.all([
       this.info({ type: "clearinghouseState", user: identity.master }),
       this.info({ type: "frontendOpenOrders", user: identity.master }),
       this.info({ type: "allMids" }),
       this.info({ type: "meta" }),
+      this.info({ type: "userAbstraction", user: identity.master }),
     ]);
     if (
       !state.marginSummary?.accountValue ||
@@ -605,9 +607,89 @@ export class CoreBridge {
         "Account observations are incomplete.",
         true,
       );
-    const scopedAvailable: Record<string, string> = {
-      core: String(state.withdrawable),
-    };
+    const mode = perpsAccountMode(abstraction);
+    if (
+      mode === "unsupported" ||
+      (mode === "unified" && process.env.RIDE_AGENT_UNIFIED_ENABLED !== "true")
+    )
+      throw new AgentError(
+        "ACCOUNT_NOT_READY",
+        "This account mode is not supported by the independent Agent execution service.",
+      );
+    let accountValue = String(state.marginSummary.accountValue);
+    let available = String(state.withdrawable);
+    if (mode === "unified") {
+      const [spot, dexAbstraction, dexes] = await Promise.all([
+        this.info({ type: "spotClearinghouseState", user: identity.master }),
+        this.info({ type: "userDexAbstraction", user: identity.master }),
+        this.info({ type: "perpDexs" }),
+      ]);
+      if (![false, null].includes(dexAbstraction))
+        throw new AgentError(
+          "ACCOUNT_NOT_READY",
+          "Agent execution requires disabled DEX abstraction.",
+        );
+      const balance = unifiedUsdc(spot);
+      accountValue = balance.equity;
+      available = balance.available;
+      // Core-only unified support cannot claim a shared balance while another
+      // DEX has exposure or pending orders. The worker repeats these checks.
+      if (
+        !Array.isArray(dexes) ||
+        dexes[0] !== null ||
+        dexes
+          .slice(1)
+          .some((dex: any) => typeof dex?.name !== "string" || !dex.name.trim())
+      )
+        throw new AgentError(
+          "ACCOUNT_STALE",
+          "Complete Perps market scopes are unavailable.",
+          true,
+        );
+      await Promise.all(
+        dexes.slice(1).map(async (dex: any) => {
+          const [other, pending] = await Promise.all([
+            this.info({
+              type: "clearinghouseState",
+              user: identity.master,
+              dex: dex.name,
+            }),
+            this.info({
+              type: "frontendOpenOrders",
+              user: identity.master,
+              dex: dex.name,
+            }),
+          ]);
+          if (!Array.isArray(other?.assetPositions) || !Array.isArray(pending))
+            throw new AgentError(
+              "ACCOUNT_STALE",
+              "Complete dedicated account observations are unavailable.",
+              true,
+            );
+          if (
+            pending.length ||
+            other.assetPositions.some(
+              (row: any) => !D(row.position?.szi).isZero(),
+            )
+          )
+            throw new AgentError(
+              "ACCOUNT_NOT_READY",
+              "Unified Agent execution requires no exposure or open orders on other Perps DEXs.",
+            );
+        }),
+      );
+      if (
+        perpsAccountMode(
+          await this.info({ type: "userAbstraction", user: identity.master }),
+        ) !== mode
+      )
+        throw new AgentError(
+          "ACCOUNT_STALE",
+          "Account mode changed during the balance observation.",
+          true,
+        );
+    }
+    const scopedAvailable: Record<string, string> = { core: available };
     const scopes = [
       ...new Set(
         (p?.sleeves ?? [])
@@ -809,14 +891,18 @@ export class CoreBridge {
           });
       }
     }
+    if (mode === "standard") {
+      accountValue = String(state.marginSummary.accountValue);
+      available = String(state.withdrawable);
+    }
     const snap: AccountSnapshot = {
       account_id: accountId,
       venue_accounts: { perps: accountId },
-      available_by_market: { perps: String(state.withdrawable) },
+      available_by_market: { perps: available },
       available_by_scope: scopedAvailable,
       observed_at: now(),
-      account_value_usdc: String(state.marginSummary.accountValue),
-      available_usdc: String(state.withdrawable),
+      account_value_usdc: accountValue,
+      available_usdc: available,
       dedicated:
         binding != null ||
         bind ||

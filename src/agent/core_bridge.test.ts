@@ -5,6 +5,114 @@ import { candidate } from "./fixtures.js";
 import { now } from "./domain.js";
 import { BridgeAdapter } from "./adapter.js";
 
+it("preflights real unified cash, preserves Standard and rejects shared DEX exposure", async () => {
+  const bridge = new CoreBridge(
+    "https://core.test",
+    "fixture",
+    "postgresql://localhost/unused",
+    "s".repeat(32),
+    "mainnet",
+  );
+  const stub = bridge as any;
+  const previous = process.env.RIDE_AGENT_UNIFIED_ENABLED;
+  const previousRwa = process.env.RIDE_AGENT_RWA_ENABLED;
+  let mode = "unifiedAccount",
+    hold = "6.1",
+    foreignPosition = false;
+  const writes: string[] = [];
+  stub.core = async (op: string) => {
+    if (op !== "perps_wallet") writes.push(op);
+    return { master: "0x" + "a".repeat(40), status: 4 };
+  };
+  stub.info = async (input: any) => {
+    switch (input.type) {
+      case "userAbstraction":
+        return mode;
+      case "userDexAbstraction":
+        return false;
+      case "perpDexs":
+        return [null, { name: "xyz" }];
+      case "spotClearinghouseState":
+        return {
+          balances: [{ coin: "USDC", token: 0, total: "36.302807", hold }],
+        };
+      case "clearinghouseState":
+        return {
+          marginSummary: { accountValue: input.dex ? "5" : "0" },
+          withdrawable: mode === "disabled" ? "7" : "0",
+          assetPositions:
+            input.dex && foreignPosition
+              ? [{ position: { coin: "xyz:TSLA", szi: "1" } }]
+              : [],
+        };
+      case "frontendOpenOrders":
+        return [];
+      case "allMids":
+        return { BTC: "100" };
+      case "meta":
+        return {
+          collateralToken: 0,
+          universe: [
+            {
+              name: input.dex ? "TSLA" : "BTC",
+              maxLeverage: 20,
+              szDecimals: 3,
+            },
+          ],
+        };
+      default:
+        assert.fail("Unexpected read " + input.type);
+    }
+  };
+  try {
+    delete process.env.RIDE_AGENT_UNIFIED_ENABLED;
+    await assert.rejects(
+      bridge.perpsAccount("alice", null),
+      /account mode is not supported/,
+    );
+    process.env.RIDE_AGENT_UNIFIED_ENABLED = "true";
+    const snapshot = await bridge.perpsAccount("alice", null);
+    assert.equal(snapshot.account_value_usdc, "36.302807");
+    assert.equal(snapshot.available_usdc, "30.202807");
+    assert.equal(snapshot.available_by_market?.perps, "30.202807");
+    hold = "40";
+    await assert.rejects(
+      bridge.perpsAccount("alice", null),
+      /could not be verified/,
+    );
+    hold = "0";
+    foreignPosition = true;
+    await assert.rejects(
+      bridge.perpsAccount("alice", null),
+      /other Perps DEXs/,
+    );
+    foreignPosition = false;
+    mode = "portfolioMargin";
+    await assert.rejects(
+      bridge.perpsAccount("alice", null),
+      /account mode is not supported/,
+    );
+    mode = "disabled";
+    assert.equal(
+      (await bridge.perpsAccount("alice", null)).available_usdc,
+      "7",
+    );
+    process.env.RIDE_AGENT_RWA_ENABLED = "true";
+    const rwa = await bridge.perpsAccount("alice", {
+      sleeves: [{ trader: { market: "perps", assets: ["xyz:TSLA"] } }],
+    } as any);
+    assert.equal(rwa.account_value_usdc, "5");
+    assert.equal(rwa.available_usdc, "14");
+    assert.deepEqual(writes, []);
+  } finally {
+    if (previous === undefined) delete process.env.RIDE_AGENT_UNIFIED_ENABLED;
+    else process.env.RIDE_AGENT_UNIFIED_ENABLED = previous;
+    if (previousRwa === undefined) delete process.env.RIDE_AGENT_RWA_ENABLED;
+    else process.env.RIDE_AGENT_RWA_ENABLED = previousRwa;
+    await bridge.close();
+  }
+});
+
 it("isolates Prediction and Perps discovery and rejects unknown market selectors", async () => {
   const bridge = new CoreBridge(
     "https://core.test",

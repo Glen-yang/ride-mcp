@@ -36,6 +36,7 @@ State and ledger records persist in PostgreSQL; each user transition locks its r
 - `RIDE_AGENT_TRADER_ID_SALT`: stable, private trader-ID salt; changing it invalidates old public IDs.
 - `RIDE_AGENT_EXECUTOR_TOKEN`: separate token used by the Agent service.
 - `RIDE_AGENT_NETWORK=testnet|mainnet`: Perps execution network; default testnet.
+- `RIDE_AGENT_UNIFIED_ENABLED=true`: opt in to core/USDC unified accounts on the independent bridge and Strategy worker. Default off. The worker additionally requires Agent V3 metadata; legacy Strategy validation remains Standard-only. Unified USDC is read once from spot state, subtracts verified holds for available margin, and rejects other DEX exposure/orders. Portfolio margin and unified RWA execution remain unsupported. This flag does not change the user's account mode or transfer funds.
 - `RIDE_AGENT_PREDICTION_ENABLED=true` plus `RIDE_AGENT_POLYGON_RPC_URL`: explicit prediction activation on Polygon. Prediction has no paper-trading mode in this integration.
 - `FCM_SERVICE_ACCOUNT_JSON_BASE64`: reuse the existing Ride Firebase service account on `agent-bridge` only. Legacy raw `FIREBASE_SERVICE_ACCOUNT_JSON` / `FCM_SERVICE_ACCOUNT_JSON` remains supported. Never ship service-account credentials to clients.
 - `RIDE_AGENT_FCM_PROJECT_ID`: optional expected Firebase project; a mismatch fails closed. Existing Ride production uses `ride-fiamma`.
