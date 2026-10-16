@@ -124,7 +124,7 @@ app.get("/fixture/host", async (req, res) => {
     .replace("/*HOST_CONFIG*/{}", JSON.stringify({ confirmation_origin: base }))
     .replace(
       "<head>",
-      `<head><script>window.openai={toolOutput:${JSON.stringify(data).replaceAll("<", "\\u003c")},callTool:async()=>{throw Error('Fixture has no account tools')}};</script>`,
+      `<head><script>window.openai={toolOutput:${JSON.stringify(data).replaceAll("<", "\\u003c")},openExternal:async({href})=>{if(new URL(href).origin!==${JSON.stringify(base)})throw Error('Fixture links must stay local');window.open(href,'ride-fixture-page')},callTool:async()=>{throw Error('Fixture has no account tools')}};</script>`,
     );
   res.type("html").send(html);
 });

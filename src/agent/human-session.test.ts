@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { once } from "node:events";
 import { it } from "node:test";
 import express from "express";
@@ -263,6 +264,20 @@ it("only the dedicated card routes can be framed and demo rendering never calls 
         .get("content-security-policy")!
         .includes("codex-sandbox://*.web-sandbox.oaiusercontent.com"),
     );
+    const csp = card.headers.get("content-security-policy")!;
+    const claudeSandbox = `https://${createHash("sha256")
+      .update(`${f.base}/mcp`)
+      .digest("hex")
+      .slice(0, 32)}.claudemcpcontent.com`;
+    assert(csp.includes("https://claude.ai "));
+    assert(csp.includes(claudeSandbox));
+    assert(!csp.includes("https://*.claudemcpcontent.com"));
+    // Framing permission must not become permission to call a human endpoint.
+    for (const origin of ["https://claude.ai", claudeSandbox]) {
+      const read = await f.post("session", {}, { Origin: origin });
+      assert.equal(read.status, 403);
+      assert.equal((await read.json()).error.code, "ORIGIN_REQUIRED");
+    }
     const demo = await fetch(`${f.base}/agent/card-demo`);
     assert((await demo.text()).includes('"demo":true'));
     assert.deepEqual(f.counts(), { exchanges: 0, writes: 0 });

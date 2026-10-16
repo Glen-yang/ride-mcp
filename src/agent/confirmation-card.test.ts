@@ -8,6 +8,7 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { registerAgentTools, RESOURCE_URI } from "./mcp.js";
 import { AgentError, result } from "./contracts.js";
+import { claudeCardDomain } from "./card_hosts.js";
 
 it("read-only card tool renders a no-execution demo or owned proposal and never exposes human approval tools", async () => {
   let calls = 0,
@@ -76,6 +77,10 @@ it("read-only card tool renders a no-execution demo or owned proposal and never 
       arguments: { mode: "demo" },
     });
     assert.equal((demo.structuredContent as any).data.confirmation_demo, true);
+    assert.equal(
+      (demo.structuredContent as any).data.proposal.confirmation_url,
+      "https://ride.test/agent/card-demo",
+    );
     assert(!JSON.stringify(demo).includes("never-expose-core"));
     assert.equal(calls, 0);
     assert.equal(reads, 0);
@@ -103,10 +108,23 @@ it("read-only card tool renders a no-execution demo or owned proposal and never 
     assert.deepEqual((item._meta?.ui as any).csp.frameDomains, [
       "https://ride.test",
     ]);
+    assert.equal(
+      (item._meta?.ui as any).domain,
+      claudeCardDomain("https://ride.test"),
+    );
     assert(
       "text" in item &&
         item.text.includes('"confirmation_origin":"https://ride.test"'),
     );
+    for (const uri of [
+      "ui://ride/agent-v4-confirmation.html",
+      "ui://ride/agent-v3.html",
+    ]) {
+      const legacy = (await client.readResource({ uri })).contents[0];
+      assert.equal(legacy.mimeType, item.mimeType);
+      assert.equal((legacy as any).text, (item as any).text);
+      assert.deepEqual(legacy._meta, item._meta);
+    }
     assert.equal(calls, 0);
     assert.equal(reads, 2);
   } finally {

@@ -6,14 +6,20 @@ financial proposal or calls the executor. `mode: proposal` reads an owned frozen
 proposal; the backend continues to validate its owner. Recommendation and
 preference tools keep their conversation-first outputs.
 
-MCP Apps use the versioned `ui://ride/agent-v4-confirmation.html` resource. The
-previous v3 URI remains registered. Only the configured Ride origin is added to
+MCP Apps use the versioned `ui://ride/agent-v5-confirmation.html` resource. The
+previous v4 and v3 URIs remain registered. Only the configured Ride origin is added to
 the resource's frame policy. The card embeds `/agent/card/:proposalId`; its
 content and human approval requests run at the Ride origin, separate from the
 model and the MCP App sandbox. Existing confirmation, OAuth and funding pages
 retain `DENY` / `frame-ancestors 'none'`. Only the dedicated card routes allow the
-ChatGPT hosts and Codex's observed `codex-sandbox://*.web-sandbox.oaiusercontent.com`
-sandbox ancestor. A normal confirmation-page link remains available as a fallback.
+ChatGPT hosts, Codex's observed `codex-sandbox://*.web-sandbox.oaiusercontent.com`
+sandbox ancestor, `https://claude.ai`, and the Claude MCP sandbox derived from
+`sha256(<this server's canonical /mcp URL>)[:32] + .claudemcpcontent.com`.
+The resource explicitly declares that stable origin in `_meta.ui.domain`.
+Other Claude connectors' sandbox origins are not allowlisted. This only permits
+framing: human endpoints still require the exact Ride origin, session, ownership
+and CSRF checks. A normal confirmation-page link remains available as a fallback.
+The 0-USDC demo also returns a public demo URL for hosts without MCP Apps support.
 
 Opening a confirmation page first restores its HttpOnly human cookie through a
 same-origin POST. This returns only its CSRF token and original expiry, never a
@@ -46,6 +52,19 @@ existing copy configurations are unchanged. Only the gateway needs deployment;
 do not redeploy the bridge, backend or legacy App services for this change.
 
 ## Acceptance
+
+Client setup must use the canonical `https://mcp.onride.me/mcp` endpoint. A legacy
+Claude connector pointing at `https://ride-mcp-production.up.railway.app/mcp` was
+observed as Connected with no tools on October 16, 2026. That status does not
+prove a functioning MCP connection. Migrate the URL, complete the client's OAuth
+flow, then verify a real tool call. Use `ride:read` for this acceptance: no trade
+scope, real proposal creation, signing or execution is needed.
+
+Claude and Grok Bot acceptance must distinguish authentication to the AI client,
+Ride MCP OAuth, UI rendering, human confirmation session reuse and actual financial
+execution. A paid-plan or trial gate is a client-access blocker, not a Ride or
+OAuth failure. Do not start a subscription or trial on the user's behalf.
+Protocol compatibility and local fixtures do not establish live host support.
 
 - Current Codex: the user expanded an existing Ride MCP card; its DOM rendered
   the frozen proposal and clicking the parameter disclosure worked. This proves

@@ -12,6 +12,7 @@ import { z } from "zod";
 import { AgentError, failure, publicResult, output } from "./contracts.js";
 import type { PrivyAuthorizationInput, RideAuthPageConfig } from "../oauth.js";
 import { MemoryHumanHandoffs, type HumanHandoffs } from "./human_handoffs.js";
+import { claudeCardDomain } from "./card_hosts.js";
 
 export function mountHumanConfirmation(
   app: Express,
@@ -206,6 +207,10 @@ export function mountHumanConfirmation(
       "https://*.chatgpt.com",
       "https://*.oaiusercontent.com",
       "codex-sandbox://*.web-sandbox.oaiusercontent.com",
+      "https://claude.ai",
+      // Claude assigns each MCP endpoint its own sandbox origin. Allow only
+      // this server's origin, rather than every connector hosted by Claude.
+      `https://${claudeCardDomain(options.base)}`,
     ];
     if (ancestors.some((x) => /[;\r\n]/.test(x)))
       throw Error("Invalid card frame ancestor");

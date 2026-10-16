@@ -91,9 +91,12 @@ function confirmationCard(container, proposal, demo) {
         frame.style.height = `${Math.min(1400, Math.max(420, event.data.height))}px`;
     };
     window.addEventListener("message", onMessage);
-    if (!demo) {
+    if (proposal.confirmation_url) {
       const fallback = el("button", "在 Ride 页面中打开", "secondary");
-      fallback.onclick = () => openLink(proposal.confirmation_url);
+      const fallbackUrl = demo
+        ? new URL("/agent/card-demo", base).href
+        : proposal.confirmation_url;
+      fallback.onclick = () => openLink(fallbackUrl);
       container.append(fallback);
     }
   } catch (error) {

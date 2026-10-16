@@ -3,6 +3,7 @@ import { fileURLToPath } from "node:url";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { accountCopiesInput } from "../account_reads.js";
+import { claudeCardDomain } from "./card_hosts.js";
 import {
   AgentError,
   failure,
@@ -16,7 +17,7 @@ import {
   type ToolName,
 } from "./contracts.js";
 
-export const RESOURCE_URI = "ui://ride/agent-v4-confirmation.html";
+export const RESOURCE_URI = "ui://ride/agent-v5-confirmation.html";
 export function registerAppAccountRead(
   server: McpServer,
   invoke: (args: unknown, extra: any) => Promise<Result>,
@@ -74,7 +75,11 @@ export function registerAgentTools(
       },
     },
   });
-  for (const resourceUri of [RESOURCE_URI, "ui://ride/agent-v3.html"])
+  for (const resourceUri of [
+    RESOURCE_URI,
+    "ui://ride/agent-v4-confirmation.html",
+    "ui://ride/agent-v3.html",
+  ])
     server.registerResource(
       "ride-agent-cards",
       resourceUri,
@@ -106,6 +111,7 @@ export function registerAgentTools(
                 ...(confirmationOrigin
                   ? {
                       csp: { frameDomains: [confirmationOrigin] },
+                      domain: claudeCardDomain(confirmation!.base),
                     }
                   : {}),
               },
@@ -170,6 +176,10 @@ export function registerAgentTools(
                   arguments: { amount_usdc: "0", execution: "disabled" },
                   preview: {},
                   expires_at: Date.now() + 300_000,
+                  confirmation_url: new URL(
+                    "/agent/card-demo",
+                    confirmation.base,
+                  ).href,
                 },
               },
               warnings: [],
