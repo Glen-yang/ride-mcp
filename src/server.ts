@@ -90,7 +90,7 @@ async function main(): Promise<void> {
       !login?.accessToken ||
       !login.user?.id
     )
-      throw new AgentError("AUTH_REQUIRED", "Ride sign-in failed.", false, 401);
+      throw new AgentError("AUTH_REQUIRED", "Ride Agent sign-in failed.", false, 401);
     return {
       rideAuthToken: login.accessToken as string,
       identity: {
@@ -121,7 +121,7 @@ async function main(): Promise<void> {
       baseUrl: base,
       resourceServerUrl: resource,
       scopesSupported: [...RIDE_OAUTH_SCOPES],
-      resourceName: "Ride",
+      resourceName: "Ride Agent",
     }),
   );
   app.use(createRideOAuthApprovalRouter(provider));
@@ -170,7 +170,7 @@ async function main(): Promise<void> {
         )
           throw new AgentError(
             "SCOPE_REQUIRED",
-            "Ride OAuth scope is missing.",
+            "Ride Agent OAuth scope is missing.",
             false,
             403,
           );

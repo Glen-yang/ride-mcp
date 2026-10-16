@@ -23,6 +23,8 @@ import {
 
 export type ClientName = "codex" | "claude-code" | "cursor";
 const legacySkillHashes = new Set([
+  // Complete company bootstrap Skill shipped in @onride/agent@0.5.1-rc.0.
+  "5c7f618213f7a57d1582c05db6e91916841fa073e40e0767580808818cbe101d",
   // Complete Skill shipped in the public @glenyang/ride-cli@0.5.0 tarball.
   "352f6193233417a573d583669a7effc396a46746085ee6e81197923030a64fb3",
   // Complete unmodified released v0.4.1, v0.4.2 and v0.4.3 Skill trees.
@@ -59,6 +61,8 @@ const managedVersions = [
   "0.4.2",
   "0.4.3",
   "0.5.0",
+  "0.5.1",
+  "0.5.1-rc.0",
   VERSION,
 ];
 

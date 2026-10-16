@@ -304,7 +304,7 @@ export async function runCli(
           throw new Error("Proposal has no confirmation URL");
         const confirmation = new URL(proposal.confirmation_url);
         if (confirmation.origin !== new URL(session.server).origin)
-          throw new Error("Confirmation origin does not match Ride");
+          throw new Error("Confirmation origin does not match Ride Agent");
         await openBrowser(confirmation.href);
       }
       print(value, !!flags.pretty);

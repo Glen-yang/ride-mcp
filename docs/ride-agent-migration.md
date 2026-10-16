@@ -4,7 +4,7 @@ Ride Agent is the **AI Copy-Trading Agent**. It helps you discover traders, buil
 
 ## Release state
 
-This migration introduces **@onride/agent 0.5.1** in the company npm organization and the company GitHub repository **onride-app/ride-agent**. Registry publication, GitHub release integrity and hosted deployment each have separate acceptance checks below.
+This migration introduces **@onride/agent 0.5.2** in the company npm organization and the company GitHub repository **onride-app/ride-agent**. Registry publication, GitHub release integrity and hosted deployment each have separate acceptance checks below.
 
 Company ownership and transfer verified on 2026-10-17:
 
@@ -12,7 +12,7 @@ Company ownership and transfer verified on 2026-10-17:
 | --- | --- |
 | Company name | `onride`; independent GitHub organization registered under Corporate terms, Free plan |
 | Old public npm latest | `@glenyang/ride-cli@0.5.0` |
-| New package/release | `@onride/agent@0.5.1`, `onride-app/ride-agent#v0.5.1`; use registry/install checks below to verify availability |
+| New package/release | `@onride/agent@0.5.2`, `onride-app/ride-agent#v0.5.2`; use registry/install checks below to verify availability |
 | npm CLI | Authenticated as `glenyang`; account 2FA enabled for authorization and publishing |
 | npm organization | `onride` exists; Free plan, unlimited public packages, $0 monthly; sole current Owner `glenyang`, account 2FA and organization 2FA enforcement enabled |
 | GitHub source | Original `Glen-yang/ride-mcp` transferred in place; leave the old location unused to retain redirects |
@@ -56,8 +56,8 @@ If global installation fails, restore the previous binary with `npm install -g @
 For a fixed source/version:
 
 ```sh
-npx -y @onride/agent@0.5.1 setup --client cursor --skip-login
-npx -y github:onride-app/ride-agent#v0.5.1 setup --client cursor --skip-login --distribution github
+npx -y @onride/agent@0.5.2 setup --client cursor --skip-login
+npx -y github:onride-app/ride-agent#v0.5.2 setup --client cursor --skip-login --distribution github
 ```
 
 The first command pins the installer; generated npm MCP launches deliberately follow `@onride/agent@latest`. Explicit GitHub distribution pins subsequent launches to the release tag. The GitHub tag must point to the exact reviewed release commit.
@@ -116,7 +116,7 @@ Keep the old package downloadable. Do not unpublish it or move its latest tag as
 | Regression tests with isolated PostgreSQL | 211 passed, 0 failed, 0 skipped, including current main's confirmation-card compatibility fixes |
 | Functional OAuth/MCP/CLI/Pg and simulated execution | 45 passed, 0 failed; no real funds moved |
 | Packed files / installed CLI / all-client fresh and repeat setup | Passed; see the verification JSON for the final file count and tarball size |
-| Built MCP identity | `name=ride`, `title=Ride Agent`, release 0.5.1 |
+| Built MCP identity | `name=ride`, `title=Ride Agent`, release 0.5.2 |
 | Published 0.5.0 upgrades | Fixed npm, old npm latest and GitHub launchers on all 3 clients passed |
 | Custom server, unrelated settings and session preservation | Passed |
 | Custom configuration refusal / failed commit rollback and retry | Passed |

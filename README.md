@@ -23,16 +23,16 @@ The installer detects Codex, Claude Code and Cursor. With one detected client it
 For unattended configuration or an explicit client, the existing options remain available:
 
 ```sh
-npx -y @onride/agent@0.5.1 setup --client codex --trade
-npx -y @onride/agent@0.5.1 setup --client claude-code --trade
-npx -y @onride/agent@0.5.1 setup --client cursor --trade
+npx -y @onride/agent@0.5.2 setup --client codex --trade
+npx -y @onride/agent@0.5.2 setup --client claude-code --trade
+npx -y @onride/agent@0.5.2 setup --client cursor --trade
 ```
 
 Codex uses native HTTP MCP and its own OAuth credential storage. If the Codex CLI is absent, setup runs the official `@openai/codex@0.162.0` CLI through npx automatically. Claude Code and Cursor use the automatically updated Ride Agent CLI's stdio MCP and private OAuth session. `setup` without `--trade` requests read access. Add `--skip-login` for configuration only; `--server https://YOUR-RIDE-HOST/mcp` selects another deployment.
 
 Setup preserves unrelated settings, upgrades unmodified managed installations and refuses to overwrite a foreign `ride` entry or customized Skill. If login is cancelled or fails, rerun the same command to retry; the installed configuration is retained.
 
-Registry installation is the default. To use the pinned GitHub release source, run `npx -y github:onride-app/ride-agent#v0.5.1 setup --client CLIENT --trade --distribution github`. Other clients supporting remote Streamable HTTP MCP with OAuth can connect to `https://mcp.onride.me/mcp`; their registration and consent interface is managed by that client. The installer currently configures Codex, Claude Code and Cursor.
+Registry installation is the default. To use the pinned GitHub release source, run `npx -y github:onride-app/ride-agent#v0.5.2 setup --client CLIENT --trade --distribution github`. Other clients supporting remote Streamable HTTP MCP with OAuth can connect to `https://mcp.onride.me/mcp`; their registration and consent interface is managed by that client. The installer currently configures Codex, Claude Code and Cursor.
 
 For the Skill alone:
 
@@ -40,7 +40,7 @@ For the Skill alone:
 npx skills add onride-app/ride-agent --skill ride
 ```
 
-The Skill-only command does not register an MCP server. For standalone CLI commands, prefix the commands below with `npx -y @onride/agent@0.5.1`, or install the pinned package with `npm install -g @onride/agent@0.5.1` to obtain `ride`.
+The Skill-only command does not register an MCP server. For standalone CLI commands, prefix the commands below with `npx -y @onride/agent@0.5.2`, or install the pinned package with `npm install -g @onride/agent@0.5.2` to obtain `ride`.
 
 ## Automatic updates and existing users
 

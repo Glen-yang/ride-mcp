@@ -665,7 +665,7 @@ export function render(
     ) {
       confirmationCard(root, q, d.confirmation_demo === true);
     } else if (q.status === "requires_confirmation" && q.confirmation_url) {
-      const b = el("button", "Open Ride confirmation");
+      const b = el("button", "Open Ride Agent confirmation");
       b.addEventListener("click", () => openLink(q.confirmation_url));
       root.append(b);
     }
