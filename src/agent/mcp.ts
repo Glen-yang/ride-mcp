@@ -17,7 +17,7 @@ import {
   type ToolName,
 } from "./contracts.js";
 
-export const RESOURCE_URI = "ui://ride/agent-v5-confirmation.html";
+export const RESOURCE_URI = "ui://ride/agent-v7-confirmation.html";
 export function registerAppAccountRead(
   server: McpServer,
   invoke: (args: unknown, extra: any) => Promise<Result>,
@@ -77,6 +77,8 @@ export function registerAgentTools(
   });
   for (const resourceUri of [
     RESOURCE_URI,
+    "ui://ride/agent-v6-confirmation.html",
+    "ui://ride/agent-v5-confirmation.html",
     "ui://ride/agent-v4-confirmation.html",
     "ui://ride/agent-v3.html",
   ])

@@ -39,11 +39,9 @@ const backend = express();
 backend.use(express.json());
 backend.post("/agent/human/:operation", (req, res) => {
   if (req.get("authorization") !== "Bearer local-fixture-core") {
-    res
-      .status(401)
-      .json({
-        error: { code: "AUTH_REQUIRED", message: "Fixture identity required" },
-      });
+    res.status(401).json({
+      error: { code: "AUTH_REQUIRED", message: "Fixture identity required" },
+    });
     return;
   }
   if (req.body.proposal_id !== proposalId) {
@@ -101,6 +99,58 @@ export default class Privy {
 app.get("/fixture/status", (_req, res) =>
   res.json({ ...counts, proposal_status: proposal.status }),
 );
+// A real postMessage host, with no OpenAI shim. Deliberately collides the
+// host ping id with the app's initialize id before returning initialization.
+app.get("/fixture/protocol-host", (_req, res) => {
+  const data = {
+    version: "3",
+    status: "ok",
+    warnings: [],
+    data: {
+      confirmation_demo: true,
+      proposal: {
+        id: "proposal_card_demo_00000000",
+        action: "demo",
+        status: "requires_confirmation",
+        arguments: { amount_usdc: "0", execution: "disabled" },
+        confirmation_url: `${base}/agent/card-demo`,
+      },
+    },
+  };
+  res.type("html")
+    .send(`<!doctype html><meta charset="utf-8"><title>Ride protocol fixture · 0 USDC</title>
+<h1>Ride 协议回归 · 0 USDC · 不连接账户</h1><p id="status">正在等待初始化</p><p id="height">卡片高度 150 px</p>
+<iframe id="app" title="Ride protocol app" src="/fixture/protocol-app" style="width:740px;height:150px;border:1px solid #ddd"></iframe>
+<button id="teardown">关闭模拟卡片</button><script>
+const frame=document.getElementById('app');let initializeId;let pongs=0;
+const send=data=>frame.contentWindow.postMessage({jsonrpc:'2.0',...data},location.origin);
+window.addEventListener('message',event=>{
+ if(event.source!==frame.contentWindow||event.origin!==location.origin)return;
+ const m=event.data;
+ if(m.method==='ui/initialize'){initializeId=m.id;send({id:m.id,method:'ping'});}
+ else if(m.id===initializeId&&m.result){pongs++;send({id:initializeId,result:{protocolVersion:'2026-01-26',hostCapabilities:{openLinks:{}},hostInfo:{name:'Ride protocol fixture',version:'1'}}});initializeId=undefined;}
+ else if(m.method==='ui/notifications/initialized'){document.getElementById('status').textContent='初始化与同 ID 心跳通过 · 无金融操作';send({method:'ui/notifications/tool-result',params:{structuredContent:${JSON.stringify(data).replaceAll("<", "\\u003c")}}});send({id:'healthy',method:'ping'});}
+ else if(m.id==='healthy'&&m.result){pongs++;document.getElementById('status').textContent+=' · 心跳响应 '+pongs;}
+ else if(m.method==='ui/notifications/size-changed'){frame.style.height=m.params.height+'px';document.getElementById('height').textContent='卡片高度 '+m.params.height+' px';}
+ else if(m.id==='teardown'&&m.result){frame.remove();document.getElementById('status').textContent='关闭握手通过 · 无金融操作';}
+ else if(m.method==='ui/open-link'){const url=new URL(m.params.url);if(url.origin===location.origin){window.open(url.href,'ride-protocol-demo');send({id:m.id,result:{}});}}
+});
+document.getElementById('teardown').onclick=()=>send({id:'teardown',method:'ui/resource-teardown'});
+</script>`);
+});
+app.get("/fixture/protocol-app", async (_req, res) => {
+  // Fixture only: the production resource is supplied by an MCP Apps host.
+  res.removeHeader("X-Frame-Options");
+  res.setHeader("Content-Security-Policy", "frame-ancestors 'self'");
+  res
+    .type("html")
+    .send(
+      (await readFile("public/agent.html", "utf8")).replace(
+        "/*HOST_CONFIG*/{}",
+        JSON.stringify({ confirmation_origin: base }),
+      ),
+    );
+});
 app.get("/fixture/host", async (req, res) => {
   const demo = req.query.mode !== "proposal";
   const data = demo
@@ -124,7 +174,7 @@ app.get("/fixture/host", async (req, res) => {
     .replace("/*HOST_CONFIG*/{}", JSON.stringify({ confirmation_origin: base }))
     .replace(
       "<head>",
-      `<head><script>window.openai={toolOutput:${JSON.stringify(data).replaceAll("<", "\\u003c")},openExternal:async({href})=>{if(new URL(href).origin!==${JSON.stringify(base)})throw Error('Fixture links must stay local');window.open(href,'ride-fixture-page')},callTool:async()=>{throw Error('Fixture has no account tools')}};</script>`,
+      `<head>${req.query.frame === "blocked" ? '<meta http-equiv="Content-Security-Policy" content="frame-src \'none\'">' : ""}<script>window.openai={toolOutput:${JSON.stringify(data).replaceAll("<", "\\u003c")},openExternal:async({href})=>{if(new URL(href).origin!==${JSON.stringify(base)})throw Error('Fixture links must stay local');window.open(href,'ride-fixture-page')},callTool:async()=>{throw Error('Fixture has no account tools')}};</script>`,
     );
   res.type("html").send(html);
 });
