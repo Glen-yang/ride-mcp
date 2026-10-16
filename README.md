@@ -6,9 +6,9 @@ Ride Agent helps you discover traders, build a personalized copy-trading portfol
 
 Ride Agent V3 selects a diversified trader basket and manages owned Perps and prediction-market copies. It exposes twenty-three Agent MCP tools plus an authenticated Ride App copy read and a live workflow guide, equivalent JSON CLI commands, conversation-first recommendation tables and Ride confirmation cards, and a portable agent Skill.
 
-**Migration release:** these commands target `@onride/agent@0.5.1`; company organization ownership, repository transfer and public publication must pass the [release checklist](docs/ride-agent-migration.md) before rollout.
+**Company distribution:** `@onride/agent` is owned by the `onride` npm organization; source and releases live in [`onride-app/ride-agent`](https://github.com/onride-app/ride-agent). Existing users can follow the [compatible upgrade guide](docs/ride-agent-migration.md).
 
-**Hosted service:** the hosted V3 endpoint is `https://mcp.onride.me/mcp`. Account readiness and Ride approval govern trading. The target CLI and Skill package is `@onride/agent`; client installation targets the same production MCP endpoint.
+**Hosted service:** the hosted V3 endpoint is `https://mcp.onride.me/mcp`. Account readiness and Ride approval govern trading. The CLI and Skill package is `@onride/agent`; client installation targets the same production MCP endpoint.
 
 ## One-command installation
 
@@ -32,7 +32,7 @@ Codex uses native HTTP MCP and its own OAuth credential storage. If the Codex CL
 
 Setup preserves unrelated settings, upgrades unmodified managed installations and refuses to overwrite a foreign `ride` entry or customized Skill. If login is cancelled or fails, rerun the same command to retry; the installed configuration is retained.
 
-Registry installation is the default. The pinned GitHub source will be available after transfer and tagging with `npx -y github:onride-app/ride-agent#v0.5.1 setup --client CLIENT --trade --distribution github`. Other clients supporting remote Streamable HTTP MCP with OAuth can connect to `https://mcp.onride.me/mcp`; their registration and consent interface is managed by that client. The installer currently configures Codex, Claude Code and Cursor.
+Registry installation is the default. To use the pinned GitHub release source, run `npx -y github:onride-app/ride-agent#v0.5.1 setup --client CLIENT --trade --distribution github`. Other clients supporting remote Streamable HTTP MCP with OAuth can connect to `https://mcp.onride.me/mcp`; their registration and consent interface is managed by that client. The installer currently configures Codex, Claude Code and Cursor.
 
 For the Skill alone:
 
@@ -48,7 +48,7 @@ The installed Skill is a stable entry point. At the start of each Ride task it c
 
 Codex connects directly to the hosted MCP, so server tools and initialization instructions update on reconnect. Existing Codex HTTP installations can already discover the live guide after reconnecting or opening a new chat. Claude Code/Cursor npm installations resolve `@onride/agent@latest` with `--prefer-online` whenever their MCP starts. A running chat does not hot-reload its tool catalog: reconnect MCP or start a new chat after a release. No update command is required after migration.
 
-For existing `@glenyang/ride-cli` installations and static Skills, run **once** on the original computer after the new package is published:
+For existing `@glenyang/ride-cli` installations and static Skills, run **once** on the original computer:
 
 ```sh
 npx -y --prefer-online @onride/agent@latest setup --skip-login

@@ -4,28 +4,29 @@ Ride Agent is the **AI Copy-Trading Agent**. It helps you discover traders, buil
 
 ## Release state
 
-This source targets **@onride/agent 0.5.1** and the user-confirmed company GitHub destination **onride-app/ride-agent**. Source readiness is separate from organization creation, repository transfer, registry publication and hosted deployment.
+This migration introduces **@onride/agent 0.5.1** in the company npm organization and the company GitHub repository **onride-app/ride-agent**. Registry publication, GitHub release integrity and hosted deployment each have separate acceptance checks below.
 
-Observed on 2026-10-16:
+Company ownership and transfer verified on 2026-10-17:
 
 | Item | Verified state |
 | --- | --- |
-| Company name | `onride`, supplied by the product owner; GitHub company contact email and agreement confirmation pending |
+| Company name | `onride`; independent GitHub organization registered under Corporate terms, Free plan |
 | Old public npm latest | `@glenyang/ride-cli@0.5.0` |
-| New public package | Not published; registry returns 404 |
+| New package/release | `@onride/agent@0.5.1`, `onride-app/ride-agent#v0.5.1`; use registry/install checks below to verify availability |
 | npm CLI | Authenticated as `glenyang`; account 2FA enabled for authorization and publishing |
 | npm organization | `onride` exists; Free plan, unlimited public packages, $0 monthly; sole current Owner `glenyang`, account 2FA and organization 2FA enforcement enabled |
-| GitHub source | `Glen-yang/ride-mcp`, public; current account has admin permission |
-| GitHub destination | `onride-app/ride-agent`, confirmed target; organization creation pending |
-| Company ownership | npm Owner verified as `glenyang`; company/founder identity, additional publisher accounts and GitHub business contact details pending confirmation |
+| GitHub source | Original `Glen-yang/ride-mcp` transferred in place; leave the old location unused to retain redirects |
+| GitHub destination | `onride-app/ride-agent`, public, same repository ID; all 50 pre-transfer Git refs, 14 releases and 13 issue/PR records retained |
+| Company ownership | Founder Glen confirmed as final responsible owner: GitHub `Glen-yang` is organization Owner, npm `glenyang` is organization Owner; `admin@onride.me` verified on npm and set as GitHub organization billing email |
+| Developer access | Only the founder is currently a member; add independent developer accounts through repository/team permissions when their usernames are supplied |
 | Production MCP | Retain `https://mcp.onride.me/mcp` and its OAuth issuer |
-| Website/directories | External rollout pending new-package acceptance; no directory submissions verified |
+| Website/directories | `onride.me` is the Ride App website; update actual Agent entries after package acceptance and record each existing directory listing separately |
 
-Do not announce the installation commands as available or deprecate the old package until the registry installation checks below pass. If `onride` cannot be registered, stop the external migration and report that result; do not choose another brand.
+Release maintainers must pass the registry installation checks below before announcing a new version or deprecating the old package. Namespace ownership alone does not establish that a package version is downloadable.
 
 ## New installation and existing-user upgrade
 
-After publication, new users run:
+New users run:
 
 ```sh
 npx -y @onride/agent
@@ -112,14 +113,15 @@ Keep the old package downloadable. Do not unpublish it or move its latest tag as
 | Check | Local result |
 | --- | --- |
 | TypeScript check / Skill validation | Passed |
-| Regression tests with isolated PostgreSQL | 206 passed, 0 failed, 0 skipped |
+| Regression tests with isolated PostgreSQL | 211 passed, 0 failed, 0 skipped, including current main's confirmation-card compatibility fixes |
 | Functional OAuth/MCP/CLI/Pg and simulated execution | 45 passed, 0 failed; no real funds moved |
 | Packed files / installed CLI / all-client fresh and repeat setup | Passed; see the verification JSON for the final file count and tarball size |
 | Built MCP identity | `name=ride`, `title=Ride Agent`, release 0.5.1 |
 | Published 0.5.0 upgrades | Fixed npm, old npm latest and GitHub launchers on all 3 clients passed |
 | Custom server, unrelated settings and session preservation | Passed |
 | Custom configuration refusal / failed commit rollback and retry | Passed |
-| Online release gate | Blocked as expected: company repository does not yet exist |
-| New npm, GitHub transfer, owners/teams, hosted display, website/listings | Pending external completion and readback |
+| GitHub transfer integrity | Same repository ID and all pre-transfer refs, releases, issue/PR records and environments preserved |
+| Online release gate | Must verify the company repository, exact release tag and unused npm version immediately before publishing |
+| Registry, hosted service and external entries | Verify and record separately using the release checks above; local tests alone do not establish publication or deployment |
 
 Compatibility strings remain intentionally in `src/cli/setup.ts`, migration tests/fixtures and upgrade/rollback documentation. Historical service names such as Railway `ride-mcp`, internal health identifiers, App names, existing OAuth scopes and storage keys retain their meanings.
