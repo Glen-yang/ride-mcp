@@ -143,7 +143,7 @@ async function callTool(name, args) {
         );
     }
   } catch (e) {
-    showError(e.message ?? "Ride request failed.");
+    showError(e.message ?? "Ride Agent request failed.");
   } finally {
     busy = false;
     buttons.forEach(({ button, disabled }) => {

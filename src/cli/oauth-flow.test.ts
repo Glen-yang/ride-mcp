@@ -56,6 +56,11 @@ it("completes SDK OAuth PKCE through the loopback callback and refreshes without
   try {
     await login(new URL("/mcp", base).href, true, async (url) => {
       const q = new URL(url).searchParams;
+      assert.equal(
+        (await provider.clientsStore.getClient(q.get("client_id")!))
+          ?.client_name,
+        "Ride Agent",
+      );
       assert.equal(q.get("code_challenge_method"), "S256");
       assert(q.get("state"));
       const request = {
@@ -63,7 +68,7 @@ it("completes SDK OAuth PKCE through the loopback callback and refreshes without
         redirect_uri: q.get("redirect_uri"),
         code_challenge: q.get("code_challenge"),
         scope: q.get("scope"),
-        resource:q.get("resource"),
+        resource: q.get("resource"),
         state: q.get("state"),
         privy_id: "alice",
         privy_access_token: "privy-test",

@@ -2,22 +2,29 @@ import {
   readFile,
   mkdir,
   lstat,
-  rename,
   writeFile,
   cp,
   rm,
   readdir,
 } from "node:fs/promises";
+import fs from "node:fs/promises";
 import { join, dirname } from "node:path";
 import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { randomBytes, createHash } from "node:crypto";
 import TOML from "@iarna/toml";
 import { serverUrl } from "./session.js";
-import { mcpLaunchArgs, PACKAGE_NAME, VERSION } from "../version.js";
+import {
+  mcpLaunchArgs,
+  PACKAGE_NAME,
+  VERSION,
+  GITHUB_REPOSITORY,
+} from "../version.js";
 
 export type ClientName = "codex" | "claude-code" | "cursor";
 const legacySkillHashes = new Set([
+  // Complete Skill shipped in the public @glenyang/ride-cli@0.5.0 tarball.
+  "352f6193233417a573d583669a7effc396a46746085ee6e81197923030a64fb3",
   // Complete unmodified released v0.4.1, v0.4.2 and v0.4.3 Skill trees.
   "eb93a8803fb194e78a94507b37572df0f800c91fe82f0351041e0962c35f57d2",
   "7121fe569d33be5eea9f600b96b31246b09962942883d0986642766ede89054c",
@@ -51,6 +58,7 @@ const managedVersions = [
   "0.4.1",
   "0.4.2",
   "0.4.3",
+  "0.5.0",
   VERSION,
 ];
 
@@ -58,7 +66,7 @@ async function skillHash(root: string): Promise<string | undefined> {
   try {
     const info = await lstat(root);
     if (info.isSymbolicLink() || !info.isDirectory())
-      throw new Error("Unsafe existing Ride Skill");
+      throw new Error("Unsafe existing Ride Agent Skill");
   } catch (e) {
     if ((e as NodeJS.ErrnoException).code === "ENOENT") return undefined;
     throw e;
@@ -69,10 +77,11 @@ async function skillHash(root: string): Promise<string | undefined> {
       withFileTypes: true,
     })) {
       const name = relative ? `${relative}/${item.name}` : item.name;
-      if (item.isSymbolicLink()) throw new Error("Unsafe existing Ride Skill");
+      if (item.isSymbolicLink())
+        throw new Error("Unsafe existing Ride Agent Skill");
       if (item.isDirectory()) await visit(name);
       else if (item.isFile()) files.set(name, await readFile(join(root, name)));
-      else throw new Error("Unsafe existing Ride Skill");
+      else throw new Error("Unsafe existing Ride Agent Skill");
     }
   }
   await visit("");
@@ -91,37 +100,61 @@ function managedStdio(
     current.command !== "npx"
   )
     return false;
-  return (
-    JSON.stringify(current.args) ===
-      JSON.stringify(mcpLaunchArgs("npm", server)) ||
-    managedVersions.some((version) =>
-      [
-        `github:Glen-yang/ride-mcp#v${version}`,
-        `@glen-yang/ride-cli@${version}`,
-        `${PACKAGE_NAME}@${version}`,
-      ].some(
-        (pkg) =>
-          JSON.stringify(current.args) ===
-          JSON.stringify(["-y", pkg, "mcp", "--server", server]),
+  // Accept only launch shapes emitted by released installers. Extra arguments,
+  // env, wrappers and unknown versions belong to the user and require review.
+  return [...managedVersions, "latest"].some((version) => {
+    const packages = [
+      ...["@glenyang/ride-cli", "@glen-yang/ride-cli", PACKAGE_NAME].map(
+        (name) => `${name}@${version}`,
       ),
-    )
-  );
+      ...(version === "latest"
+        ? []
+        : [
+            `github:Glen-yang/ride-mcp#v${version}`,
+            `github:${GITHUB_REPOSITORY}#v${version}`,
+          ]),
+    ];
+    return packages.some((pkg) =>
+      [["-y"], ["-y", "--prefer-online"]].some(
+        (prefix) =>
+          JSON.stringify(current.args) ===
+          JSON.stringify([...prefix, pkg, "mcp", "--server", server]),
+      ),
+    );
+  });
+}
+
+function installedServer(
+  current: Record<string, unknown> | undefined,
+): string | undefined {
+  if (!current) return undefined;
+  if (typeof current.url === "string") return current.url;
+  const args = current.args;
+  if (
+    Array.isArray(args) &&
+    args.at(-2) === "--server" &&
+    typeof args.at(-1) === "string"
+  ) {
+    const server = args.at(-1) as string;
+    if (managedStdio(current, server)) return server;
+  }
+  return undefined;
 }
 
 export async function setup(
   client: ClientName,
-  server: string,
+  requestedServer: string | undefined,
   home?: string,
   distribution: "github" | "npm" = "npm",
 ): Promise<{
   client: ClientName;
+  server: string;
   config: string;
   skill: string;
   login_required: true;
   transport: "http" | "stdio";
   auto_updates: { mcp: "hosted" | "on_restart" | "pinned"; workflow: "live" };
 }> {
-  server = serverUrl(server);
   if (!["codex", "claude-code", "cursor"].includes(client))
     throw new Error("Unsupported client");
   const base = home ?? homedir();
@@ -142,8 +175,6 @@ export async function setup(
     "skills",
     "ride",
   );
-  const args = mcpLaunchArgs(distribution, server);
-  const entry = client === "codex" ? { url: server } : { command: "npx", args };
   let old: string | undefined;
   try {
     if ((await lstat(config)).isSymbolicLink())
@@ -154,12 +185,21 @@ export async function setup(
   }
   const conflict = () =>
     new Error(
-      "Existing Ride MCP registration differs; preserve it and review configuration manually",
+      `Existing Ride Agent MCP registration differs at ${config}; no files changed. Back up this file, retain your server URL and custom parameters, and replace only the old package with ${PACKAGE_NAME}@latest after review. Keep a customized registration under manual management; see docs/ride-agent-migration.md.`,
     );
+  const parsed =
+    client === "codex"
+      ? (TOML.parse(old ?? "") as any)
+      : JSON.parse(old ?? "{}");
+  const current =
+    client === "codex" ? parsed.mcp_servers?.ride : parsed.mcpServers?.ride;
+  const server = serverUrl(
+    requestedServer ?? installedServer(current) ?? "https://mcp.onride.me/mcp",
+  );
+  const args = mcpLaunchArgs(distribution, server);
+  const entry = client === "codex" ? { url: server } : { command: "npx", args };
   let next: string;
   if (client === "codex") {
-    const parsed = TOML.parse(old ?? "") as any;
-    const current = parsed.mcp_servers?.ride;
     if (
       current &&
       current.url === server &&
@@ -198,8 +238,6 @@ export async function setup(
     const check = (TOML.parse(next) as any).mcp_servers.ride;
     if (check.url !== server || check.command || check.args) throw conflict();
   } else {
-    const parsed = JSON.parse(old ?? "{}");
-    const current = parsed.mcpServers?.ride;
     if (current && !managedStdio(current, server)) throw conflict();
     parsed.mcpServers = { ...parsed.mcpServers, ride: entry };
     next = JSON.stringify(parsed, null, 2) + "\n";
@@ -211,7 +249,7 @@ export async function setup(
     incoming = await skillHash(packaged);
   if (present && present !== incoming && !legacySkillHashes.has(present))
     throw new Error(
-      "Existing Ride Skill differs; preserve it and review manually",
+      `Existing Ride Agent Skill differs at ${skill}; no files changed. Back up and compare your custom instructions with the packaged skills/ride. Keep a merged Skill under manual management, or move your backup aside yourself before retrying setup --skip-login.`,
     );
   await mkdir(dirname(skill), { recursive: true });
   await mkdir(dirname(config), { recursive: true });
@@ -240,16 +278,17 @@ export async function setup(
       );
     if (present !== incoming) {
       if (present !== undefined) {
-        await rename(skill, backupSkill);
+        await fs.rename(skill, backupSkill);
         skillBackedUp = true;
       }
-      await rename(tempSkill, skill);
+      await fs.rename(tempSkill, skill);
       skillChanged = true;
     }
-    await rename(tempConfig, config);
+    await fs.rename(tempConfig, config);
     committed = true;
     return {
       client,
+      server,
       config,
       skill,
       login_required: true,
@@ -266,7 +305,7 @@ export async function setup(
     };
   } catch (e) {
     if (skillChanged) await rm(skill, { recursive: true, force: true });
-    if (skillBackedUp) await rename(backupSkill, skill);
+    if (skillBackedUp) await fs.rename(backupSkill, skill);
     throw e;
   } finally {
     await rm(tempConfig, { force: true });

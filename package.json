@@ -1,5 +1,5 @@
 {
-  "name": "@glenyang/ride-cli",
+  "name": "@onride/agent",
   "version": "0.5.1",
   "private": false,
   "type": "module",
@@ -15,7 +15,8 @@
     "start:bridge": "node dist/bridge.js",
     "check": "tsc --noEmit -p tsconfig.test.json",
     "dev": "tsx src/server.ts",
-    "verify:package": "node scripts/verify-package.mjs"
+    "verify:package": "node scripts/verify-package.mjs",
+    "verify:release": "node scripts/verify-release.mjs"
   },
   "dependencies": {
     "@iarna/toml": "^2.2.5",
@@ -46,15 +47,15 @@
   "engines": {
     "node": ">=20"
   },
-  "description": "Ride MCP V3, portfolio CLI and installable agent Skill",
+  "description": "Ride Agent helps you discover traders, build a personalized copy-trading portfolio, and start copying after your confirmation.",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Glen-yang/ride-mcp.git"
+    "url": "git+https://github.com/onride-app/ride-agent.git"
   },
-  "homepage": "https://github.com/Glen-yang/ride-mcp#readme",
+  "homepage": "https://github.com/onride-app/ride-agent#readme",
   "bugs": {
-    "url": "https://github.com/Glen-yang/ride-mcp/issues"
+    "url": "https://github.com/onride-app/ride-agent/issues"
   },
   "bin": {
     "ride": "dist/cli.js"

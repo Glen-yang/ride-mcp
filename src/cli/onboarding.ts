@@ -31,7 +31,7 @@ export async function runCodex(
 
 export async function onboard(
   client: ClientName,
-  server: string,
+  server: string | undefined,
   options: {
     trade?: boolean;
     skipLogin?: boolean;
@@ -65,11 +65,11 @@ export async function onboard(
       await (
         dependencies.cliLogin ??
         ((url, trade) => withSessionLock(() => login(url, trade)))
-      )(server, !!options.trade);
+      )(installed.server, !!options.trade);
   } catch (e) {
     const reason = e instanceof Error ? e.message : "Authentication failed";
     throw new Error(
-      `Ride Skill and MCP are installed, but login is incomplete. Rerun the same setup command to retry. ${reason}`,
+      `Ride Agent Skill and MCP are installed, but login is incomplete. Rerun the same setup command to retry. ${reason}`,
     );
   }
   return {
