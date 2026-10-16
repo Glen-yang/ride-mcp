@@ -115,7 +115,7 @@ async function ready() {
       location.origin,
     );
     status.textContent =
-      "Ride 已连接，请返回聊天卡片确认操作。此窗口没有提交交易。";
+      "Ride Agent 已连接，请返回聊天卡片确认操作。此窗口没有提交交易。";
     return;
   }
   await loadProposal();
@@ -320,7 +320,7 @@ async function start() {
     url.searchParams.delete("error_description");
     history.replaceState({}, "", url.href);
     showLogin();
-    showError(Error("Ride 登录已取消。"));
+    showError(Error("Ride Agent 登录已取消。"));
     return;
   }
   try {
