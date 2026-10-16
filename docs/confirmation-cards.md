@@ -6,8 +6,8 @@ financial proposal or calls the executor. `mode: proposal` reads an owned frozen
 proposal; the backend continues to validate its owner. Recommendation and
 preference tools keep their conversation-first outputs.
 
-MCP Apps use the versioned `ui://ride/agent-v5-confirmation.html` resource. The
-previous v4 and v3 URIs remain registered. Only the configured Ride origin is added to
+MCP Apps use the versioned `ui://ride/agent-v6-confirmation.html` resource. The
+previous v5, v4 and v3 URIs remain registered. Only the configured Ride origin is added to
 the resource's frame policy. The card embeds `/agent/card/:proposalId`; its
 content and human approval requests run at the Ride origin, separate from the
 model and the MCP App sandbox. Existing confirmation, OAuth and funding pages
@@ -20,6 +20,11 @@ Other Claude connectors' sandbox origins are not allowlisted. This only permits
 framing: human endpoints still require the exact Ride origin, session, ownership
 and CSRF checks. A normal confirmation-page link remains available as a fallback.
 The 0-USDC demo also returns a public demo URL for hosts without MCP Apps support.
+If the trusted frame has not reported readiness after eight seconds, the outer
+card hides the unavailable frame and directs the user to that normal Ride page.
+A later verified message from the exact Ride frame can restore the embedded UI.
+This also handles Claude web's observed nested-frame block without changing CSP,
+moving approval controls into the host sandbox or exposing session credentials.
 
 Opening a confirmation page first restores its HttpOnly human cookie through a
 same-origin POST. This returns only its CSRF token and original expiry, never a
@@ -65,6 +70,13 @@ Ride MCP OAuth, UI rendering, human confirmation session reuse and actual financ
 execution. A paid-plan or trial gate is a client-access blocker, not a Ride or
 OAuth failure. Do not start a subscription or trial on the user's behalf.
 Protocol compatibility and local fixtures do not establish live host support.
+
+October 16 live acceptance: Claude web renders the outer MCP App at its stable
+origin, but its host blocks the nested Ride frame (`chrome-error://chromewebdata/`).
+Its official open-link flow successfully opens the public demo. Grok Bot 0.71.2
+calls the tools and returns the fallback URL, but does not render MCP Apps in its
+chat. Public demo confirmation and cancellation work on the production gateway.
+These results do not establish inline financial confirmation in either client.
 
 - Current Codex: the user expanded an existing Ride MCP card; its DOM rendered
   the frozen proposal and clicking the parameter disclosure worked. This proves

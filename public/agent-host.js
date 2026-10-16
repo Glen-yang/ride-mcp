@@ -63,8 +63,18 @@ function confirmationCard(container, proposal, demo) {
     const state = el("p", "正在连接 Ride 确认卡片…", "muted");
     state.setAttribute("aria-live", "polite");
     container.append(state);
+    const readyTimeout = setTimeout(() => {
+      if (!frame.isConnected) {
+        window.removeEventListener("message", onMessage);
+        return;
+      }
+      frame.hidden = true;
+      state.textContent =
+        "当前客户端未能加载内嵌确认。请在 Ride 页面中打开；有效登录会自动复用。";
+    }, 8000);
     const onMessage = (event) => {
       if (!frame.isConnected) {
+        clearTimeout(readyTimeout);
         window.removeEventListener("message", onMessage);
         return;
       }
@@ -75,6 +85,8 @@ function confirmationCard(container, proposal, demo) {
         (!demo && event.data.proposal_id !== id)
       )
         return;
+      clearTimeout(readyTimeout);
+      frame.hidden = false;
       const names = {
         demo_ready: "模拟卡片已就绪 · 不会交易",
         demo_confirmed: "模拟确认成功 · 未提交交易",
@@ -91,6 +103,15 @@ function confirmationCard(container, proposal, demo) {
         frame.style.height = `${Math.min(1400, Math.max(420, event.data.height))}px`;
     };
     window.addEventListener("message", onMessage);
+    container.append(
+      el(
+        "p",
+        demo
+          ? "0 USDC 界面测试 · 不连接账户或执行服务"
+          : `操作 ${proposal.action} · 状态 ${proposal.status} · 请在 Ride 中核对完整方案`,
+        "muted",
+      ),
+    );
     if (proposal.confirmation_url) {
       const fallback = el("button", "在 Ride 页面中打开", "secondary");
       const fallbackUrl = demo

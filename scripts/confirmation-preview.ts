@@ -39,11 +39,9 @@ const backend = express();
 backend.use(express.json());
 backend.post("/agent/human/:operation", (req, res) => {
   if (req.get("authorization") !== "Bearer local-fixture-core") {
-    res
-      .status(401)
-      .json({
-        error: { code: "AUTH_REQUIRED", message: "Fixture identity required" },
-      });
+    res.status(401).json({
+      error: { code: "AUTH_REQUIRED", message: "Fixture identity required" },
+    });
     return;
   }
   if (req.body.proposal_id !== proposalId) {
@@ -124,7 +122,7 @@ app.get("/fixture/host", async (req, res) => {
     .replace("/*HOST_CONFIG*/{}", JSON.stringify({ confirmation_origin: base }))
     .replace(
       "<head>",
-      `<head><script>window.openai={toolOutput:${JSON.stringify(data).replaceAll("<", "\\u003c")},openExternal:async({href})=>{if(new URL(href).origin!==${JSON.stringify(base)})throw Error('Fixture links must stay local');window.open(href,'ride-fixture-page')},callTool:async()=>{throw Error('Fixture has no account tools')}};</script>`,
+      `<head>${req.query.frame === "blocked" ? '<meta http-equiv="Content-Security-Policy" content="frame-src \'none\'">' : ""}<script>window.openai={toolOutput:${JSON.stringify(data).replaceAll("<", "\\u003c")},openExternal:async({href})=>{if(new URL(href).origin!==${JSON.stringify(base)})throw Error('Fixture links must stay local');window.open(href,'ride-fixture-page')},callTool:async()=>{throw Error('Fixture has no account tools')}};</script>`,
     );
   res.type("html").send(html);
 });

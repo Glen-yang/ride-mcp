@@ -120,7 +120,14 @@ export function render(
       d.confirmation_card)
   ) {
     root.append(
-      el("h1", d.confirmation_demo ? "确认卡片测试" : "确认本次操作"),
+      el(
+        "h1",
+        d.confirmation_demo
+          ? "确认卡片测试"
+          : d.proposal.status === "requires_confirmation"
+            ? "确认本次操作"
+            : "操作状态记录",
+      ),
     );
     confirmationCard(root, d.proposal, d.confirmation_demo === true);
     return;
