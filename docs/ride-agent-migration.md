@@ -10,6 +10,7 @@ Observed on 2026-10-16:
 
 | Item | Verified state |
 | --- | --- |
+| Company name | `onride`, supplied by the product owner; GitHub company contact email and agreement confirmation pending |
 | Old public npm latest | `@glenyang/ride-cli@0.5.0` |
 | New public package | Not published; registry returns 404 |
 | npm CLI | Authenticated as `glenyang`; account 2FA enabled for authorization and publishing |
@@ -69,7 +70,7 @@ Setup stages its configuration and Skill, checks that both originals still match
 ## Company ownership and repository transfer
 
 1. Create/confirm npm `onride` using the **Unlimited public packages** free plan. Verify availability during creation, not from a public 404. Confirm the company/founder Owner and developer account names. Enforce 2FA and give developers package publishing access through an appropriate team; do not distribute passwords or tokens.
-2. Finish the GitHub **onride-app** Free organization as a business-owned organization, using the confirmed business name and contact email. Accept its agreement only with the authorized person's approval. Confirm company/founder Owner access, developer repository access and 2FA.
+2. Finish the GitHub **onride-app** Free organization as a business-owned organization, using business name `onride` and the owner-confirmed contact email. Accept its agreement only with the authorized person's approval. Confirm company/founder Owner access, developer repository access and 2FA.
 3. Transfer the existing repository to that organization and rename it **ride-agent**. Do not create a replacement empty repository, rewrite history or recreate releases. Before/after evidence must compare commit and tag refs, releases, issues/PRs and project access. Check installed GitHub Apps, Actions/environment protection, webhooks, Railway source integration and deployment configuration.
 4. Update `origin` only after transfer is confirmed. Preserve the old GitHub redirect by leaving the previous repository location unused. Confirm clone/fetch and fixed release-tag installs at the new URL. Package repository metadata, homepage and issues links must all resolve to the company repository.
 
