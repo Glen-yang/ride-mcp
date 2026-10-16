@@ -2,11 +2,11 @@
 
 Call `get_ride_guide` through the connected MCP before Ride tasks. The equivalent unauthenticated read is `ride guide --server https://mcp.onride.me/mcp`. The guide updates on the server without replacing local Skill files. Use the connected deployment's URL and current tool schemas. Reconnect or start a new chat to discover newly added tools.
 
-Codex uses hosted HTTP MCP. npm setup for Claude Code/Cursor launches `npx -y --prefer-online @glenyang/ride-cli@latest mcp --server URL` so each MCP start resolves the published stable package. Existing pinned installations need one migration with `npx -y --prefer-online @glenyang/ride-cli@latest setup --skip-login`, then reconnect. Existing login remains stored; updates do not grant additional authority. Explicit GitHub distribution remains pinned. Globally installed `ride` binaries stay at their installed version; use the latest npx command below for standalone CLI updates.
+Codex uses hosted HTTP MCP. npm setup for Claude Code/Cursor launches `npx -y --prefer-online @onride/agent@latest mcp --server URL` so each MCP start resolves the published stable package. Existing pinned installations need one migration with `npx -y --prefer-online @onride/agent@latest setup --skip-login`, then reconnect. Existing login remains stored; updates do not grant additional authority. Explicit GitHub distribution remains pinned. Globally installed `ride` binaries stay at their installed version; use the latest npx command below for standalone CLI updates.
 
 # CLI equivalence
 
-Default output is JSON. Add `--pretty` for human-readable cards/tables. The CLI bin is `ride`; use `npx -y --prefer-online @glenyang/ride-cli@latest` before each command until installed globally. Codex native HTTP MCP credentials are managed by Codex. For standalone CLI use, authenticate separately with `ride login --server https://mcp.onride.me/mcp --trade`. Claude/Cursor setup creates this CLI session automatically.
+Default output is JSON. Add `--pretty` for human-readable cards/tables. The CLI bin is `ride`; use `npx -y --prefer-online @onride/agent@latest` before each command until installed globally. Codex native HTTP MCP credentials are managed by Codex. For standalone CLI use, authenticate separately with `ride login --server https://mcp.onride.me/mcp --trade`. Claude/Cursor setup creates this CLI session automatically.
 
 | MCP tool                     | CLI                                                                                                                                                 |
 | ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |

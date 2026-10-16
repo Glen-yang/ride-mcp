@@ -4,6 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import assert from "node:assert/strict";
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 const temp = await mkdtemp(join(tmpdir(), "ride-package-"));
 try {
   const packed = JSON.parse(
@@ -14,7 +16,7 @@ try {
   )[0];
   for (const f of packed.files) {
     assert(
-      !/(\.test\.|fixtures\.|dist\/index\.|(^|\/)\.env$|\.pem$|session\.json|output\/|\.playwright)/.test(
+      !/(\.test\.|fixtures[./]|dist\/index\.|(^|\/)\.env$|\.pem$|session\.json|output\/|\.playwright)/.test(
         f.path,
       ),
       `Unwanted package file: ${f.path}`,
@@ -44,12 +46,23 @@ try {
       ["--help"],
       { encoding: "utf8" },
     );
-    assert(help.includes("Ride CLI"));
+    assert(help.includes("Ride Agent"));
   }
   const root = join(temp, "node_modules", packed.name);
-  const { version } = JSON.parse(
+  const metadata = JSON.parse(
     await readFile(join(root, "package.json"), "utf8"),
   );
+  assert.equal(metadata.name, "@onride/agent");
+  assert.equal(metadata.bin.ride, "dist/cli.js");
+  for (const file of packed.files) {
+    const body = await readFile(join(root, file.path), "utf8");
+    assert(
+      !/(-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----|\bnpm_[A-Za-z0-9]{30,}|\bgh[pousr]_[A-Za-z0-9]{30,})/.test(
+        body,
+      ),
+      `Possible credential: ${file.path}`,
+    );
+  }
   const { setup } = await import(
     pathToFileURL(join(root, "dist/cli/setup.js"))
   );
@@ -73,6 +86,8 @@ try {
           : `${packed.name}@latest`,
       ),
     );
+    await setup(client, undefined, home);
+    assert.equal(await readFile(result.config, "utf8"), text);
     const autoHome = join(temp, "auto", client);
     await mkdir(
       join(autoHome, client === "claude-code" ? ".claude" : `.${client}`),
@@ -111,6 +126,31 @@ try {
         "name: ride",
       ),
     );
+  }
+  // Exercise the built stdio server, not a source import.
+  const mcp = new Client({ name: "ride-package-verification", version: "1" });
+  try {
+    await mcp.connect(
+      new StdioClientTransport({
+        command: process.execPath,
+        args: [join(root, "dist/cli.js"), "mcp"],
+        env: {
+          PATH: process.env.PATH ?? "",
+          HOME: temp,
+          RIDE_CONFIG_DIR: join(temp, "isolated-session"),
+        },
+      }),
+    );
+    assert.deepEqual(mcp.getServerVersion(), {
+      name: "ride",
+      title: "Ride Agent",
+      version: metadata.version,
+    });
+    const { tools } = await mcp.listTools();
+    assert(tools.some((tool) => tool.name === "get_ride_guide"));
+    assert(tools.some((tool) => tool.name === "start_copy"));
+  } finally {
+    await mcp.close();
   }
   console.log(
     JSON.stringify({

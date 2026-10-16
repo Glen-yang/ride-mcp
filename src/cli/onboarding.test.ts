@@ -106,7 +106,7 @@ it("upgrades the released v0.2.3 Skill and pinned stdio configuration without ch
     const config = JSON.parse(
       await readFile(join(home, ".cursor/mcp.json"), "utf8"),
     );
-    assert.equal(config.mcpServers.ride.args[2], "@glenyang/ride-cli@latest");
+    assert.equal(config.mcpServers.ride.args[2], "@onride/agent@latest");
     assert.deepEqual(config.mcpServers.other, { url: "https://other.test" });
     assert(
       (
@@ -184,7 +184,7 @@ it("migrates released v0.4.0 on all clients once, retaining credentials and unre
         assert.deepEqual(current.mcpServers.ride.args, [
           "-y",
           "--prefer-online",
-          "@glenyang/ride-cli@latest",
+          "@onride/agent@latest",
           "mcp",
           "--server",
           server,
@@ -401,7 +401,7 @@ it("upgrades released JSON stdio configurations to this distribution version", (
     const current = JSON.parse(await readFile(path, "utf8"));
     assert.equal(current.setting, 42);
     assert.equal(current.mcpServers.other.command, "other");
-    assert.equal(current.mcpServers.ride.args[2], "@glenyang/ride-cli@latest");
+    assert.equal(current.mcpServers.ride.args[2], "@onride/agent@latest");
   }));
 
 it("refuses customized Skill references without altering client configuration", () =>

@@ -156,7 +156,7 @@ async function main(): Promise<void> {
   );
   app.post("/mcp", auth, async (req, res) => {
     const server = new McpServer(
-      { name: "ride", version: VERSION },
+      { name: "ride", title: "Ride Agent", version: VERSION },
       { instructions: GUIDE_INSTRUCTIONS },
     );
     registerGuide(server);
@@ -242,12 +242,12 @@ async function main(): Promise<void> {
   });
   app.use(requestBodyErrorHandler);
   app.listen(port, host, () =>
-    console.error(`Ride MCP listening on ${base.origin}/mcp`),
+    console.error(`Ride Agent listening on ${base.origin}/mcp`),
   );
 }
 main().catch(() => {
   console.error(
-    "Ride MCP startup failed. Check required OAuth and backend configuration.",
+    "Ride Agent startup failed. Check required OAuth and backend configuration.",
   );
   process.exitCode = 1;
 });

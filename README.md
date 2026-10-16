@@ -1,15 +1,21 @@
-# Ride MCP · CLI · Skill
+# Ride Agent
+
+**AI Copy-Trading Agent**
+
+Ride Agent helps you discover traders, build a personalized copy-trading portfolio, and start copying after your confirmation.
 
 Ride Agent V3 selects a diversified trader basket and manages owned Perps and prediction-market copies. It exposes twenty-three Agent MCP tools plus an authenticated Ride App copy read and a live workflow guide, equivalent JSON CLI commands, conversation-first recommendation tables and Ride confirmation cards, and a portable agent Skill.
 
-**Release status:** the hosted V3 endpoint is `https://mcp.onride.me/mcp`. Account readiness and Ride approval govern trading. The CLI and Skill are distributed as `@glenyang/ride-cli`; client installation targets the same production MCP endpoint.
+**Company distribution:** `@onride/agent` is owned by the `onride` npm organization; source and releases live in [`onride-app/ride-agent`](https://github.com/onride-app/ride-agent). Existing users can follow the [compatible upgrade guide](docs/ride-agent-migration.md).
+
+**Hosted service:** the hosted V3 endpoint is `https://mcp.onride.me/mcp`. Account readiness and Ride approval govern trading. The CLI and Skill package is `@onride/agent`; client installation targets the same production MCP endpoint.
 
 ## One-command installation
 
 Node.js 20+ and an AI client are required. Run this single command:
 
 ```sh
-npx -y --prefer-online @glenyang/ride-cli@latest
+npx -y @onride/agent
 ```
 
 The installer detects Codex, Claude Code and Cursor. With one detected client it continues automatically; with multiple or no detected clients it shows a short selection menu. It installs the Skill, connects the production MCP and opens Ride login. Authorize with your own Ride account, then restart your AI client or open a new chat. The default command requests read and proposal access; execution still requires confirmation in Ride.
@@ -17,38 +23,40 @@ The installer detects Codex, Claude Code and Cursor. With one detected client it
 For unattended configuration or an explicit client, the existing options remain available:
 
 ```sh
-npx -y @glenyang/ride-cli@0.4.2 setup --client codex --trade
-npx -y @glenyang/ride-cli@0.4.2 setup --client claude-code --trade
-npx -y @glenyang/ride-cli@0.4.2 setup --client cursor --trade
+npx -y @onride/agent@0.5.1 setup --client codex --trade
+npx -y @onride/agent@0.5.1 setup --client claude-code --trade
+npx -y @onride/agent@0.5.1 setup --client cursor --trade
 ```
 
-Codex uses native HTTP MCP and its own OAuth credential storage. If the Codex CLI is absent, setup runs the official `@openai/codex@0.162.0` CLI through npx automatically. Claude Code and Cursor use the automatically updated Ride CLI's stdio MCP and private OAuth session. `setup` without `--trade` requests read access. Add `--skip-login` for configuration only; `--server https://YOUR-RIDE-HOST/mcp` selects another deployment.
+Codex uses native HTTP MCP and its own OAuth credential storage. If the Codex CLI is absent, setup runs the official `@openai/codex@0.162.0` CLI through npx automatically. Claude Code and Cursor use the automatically updated Ride Agent CLI's stdio MCP and private OAuth session. `setup` without `--trade` requests read access. Add `--skip-login` for configuration only; `--server https://YOUR-RIDE-HOST/mcp` selects another deployment.
 
 Setup preserves unrelated settings, upgrades unmodified managed installations and refuses to overwrite a foreign `ride` entry or customized Skill. If login is cancelled or fails, rerun the same command to retry; the installed configuration is retained.
 
-Registry installation is the default. The pinned GitHub source remains available with `npx -y github:Glen-yang/ride-mcp#v0.4.2 setup --client CLIENT --trade --distribution github`. Other clients supporting remote Streamable HTTP MCP with OAuth can connect to `https://mcp.onride.me/mcp`; their registration and consent interface is managed by that client. The installer currently configures Codex, Claude Code and Cursor.
+Registry installation is the default. To use the pinned GitHub release source, run `npx -y github:onride-app/ride-agent#v0.5.1 setup --client CLIENT --trade --distribution github`. Other clients supporting remote Streamable HTTP MCP with OAuth can connect to `https://mcp.onride.me/mcp`; their registration and consent interface is managed by that client. The installer currently configures Codex, Claude Code and Cursor.
 
 For the Skill alone:
 
 ```sh
-npx skills add Glen-yang/ride-mcp --skill ride
+npx skills add onride-app/ride-agent --skill ride
 ```
 
-The Skill-only command does not register an MCP server. For standalone CLI commands, prefix the commands below with `npx -y @glenyang/ride-cli@0.4.2`, or install the pinned package with `npm install -g @glenyang/ride-cli@0.4.2` to obtain `ride`.
+The Skill-only command does not register an MCP server. For standalone CLI commands, prefix the commands below with `npx -y @onride/agent@0.5.1`, or install the pinned package with `npm install -g @onride/agent@0.5.1` to obtain `ride`.
 
 ## Automatic updates and existing users
 
 The installed Skill is a stable entry point. At the start of each Ride task it calls `get_ride_guide` to load the workflow from the configured Ride server. Deploying a new workflow updates its behavior without reinstalling local Skill files. The guide never grants new trading authority. If the live guide is unavailable, account reads and explanations can use the bundled reference; new financial proposals wait for the guide to recover.
 
-Codex connects directly to the hosted MCP, so server tools and initialization instructions update on reconnect. Existing Codex HTTP installations can already discover the live guide after reconnecting or opening a new chat. Claude Code/Cursor npm installations resolve `@glenyang/ride-cli@latest` with `--prefer-online` whenever their MCP starts. A running chat does not hot-reload its tool catalog: reconnect MCP or start a new chat after a release. No update command is required after migration.
+Codex connects directly to the hosted MCP, so server tools and initialization instructions update on reconnect. Existing Codex HTTP installations can already discover the live guide after reconnecting or opening a new chat. Claude Code/Cursor npm installations resolve `@onride/agent@latest` with `--prefer-online` whenever their MCP starts. A running chat does not hot-reload its tool catalog: reconnect MCP or start a new chat after a release. No update command is required after migration.
 
-For existing pinned installations and static Skills, run **once** on the original computer:
+For existing `@glenyang/ride-cli` installations and static Skills, run **once** on the original computer:
 
 ```sh
-npx -y --prefer-online @glenyang/ride-cli@latest setup --skip-login
+npx -y --prefer-online @onride/agent@latest setup --skip-login
 ```
 
-Use `--client codex`, `--client claude-code` or `--client cursor` if multiple clients are installed, and retain a custom `--server` if one was configured. Migration accepts unmodified released Skills, preserves existing OAuth login and unrelated configuration, and refuses customized Skills or foreign Ride registrations. Already installed pinned code cannot remotely rewrite the user's computer before this migration. Explicit GitHub distribution and global `npm install -g` binaries stay pinned; standalone CLI users can run `npx -y --prefer-online @glenyang/ride-cli@latest COMMAND` instead of reinstalling.
+Use `--client codex`, `--client claude-code` or `--client cursor` if multiple clients are installed. Migration automatically retains the configured server when `--server` is omitted. Explicitly selecting a different server requires manual review. Migration accepts unmodified released Skills, preserves existing OAuth login and unrelated configuration, and refuses customized Skills or foreign Ride registrations. Already installed pinned code cannot remotely rewrite the user's computer before this migration. Explicit GitHub distribution and global `npm install -g` binaries stay pinned; standalone CLI users can run `npx -y --prefer-online @onride/agent@latest COMMAND` instead of reinstalling.
+
+The old package and its `latest` remain independent of the new package; upgrading the old name alone cannot switch namespaces. Existing global users can use the npx upgrade above, then run `npm uninstall -g @glenyang/ride-cli && npm install -g @onride/agent@latest` to transfer the `ride` binary. Authentication remains in `~/.ride`. See [migration, rollback and troubleshooting](docs/ride-agent-migration.md).
 
 The public, unauthenticated `ride guide --server URL` command reads the same workflow as MCP. Its version and content digest support consistency checks; OAuth sessions and account data are never included in this read.
 
@@ -156,7 +164,7 @@ To test the actual feature journey locally, use an isolated disposable PostgreSQ
 RIDE_AGENT_FUNCTIONAL_DATABASE_URL='postgresql://USER@127.0.0.1:5432/ride_functional_acceptance' npm run test:functional
 ```
 
-This starts the real MCP gateway, HTTP backend, OAuth PKCE flow and CLI, and runs 36 scenarios through the Agent tools, live guide and account reads with persisted PostgreSQL state. It covers recommendation risk filters, frozen human proposals, partial fills, fees/funding, position closes, wind-down, delegated limits, both loss triggers, replacement limits, stale proposals and monitor recovery. Only Core identities and venue reads/fills are simulated; this does not verify a real login, wallet signing or exchange settlement. The script removes its own fixture states and writes `output/deployment/functional-acceptance.json` with every scenario and tool response.
+This starts the real MCP gateway, HTTP backend, OAuth PKCE flow and CLI, and runs 45 scenarios through the Agent tools, live guide and account reads with persisted PostgreSQL state. It covers recommendation risk filters, frozen human proposals, partial fills, fees/funding, position closes, wind-down, delegated limits, both loss triggers, replacement limits, stale proposals and monitor recovery. Only Core identities and venue reads/fills are simulated; this does not verify a real login, wallet signing or exchange settlement. The script removes its own fixture states and writes `output/deployment/functional-acceptance.json` with every scenario and tool response.
 
 MIT. The open repository is created from a clean history and contains no private Ride repository history, credentials, or user account data.
 

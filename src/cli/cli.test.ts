@@ -156,7 +156,7 @@ it("upgrades an unmodified v0.4.3 Skill and pinned client config while refusing 
     );
     assert.ok(
       (await readFile(installed.config, "utf8")).includes(
-        "@glenyang/ride-cli@latest",
+        "@onride/agent@latest",
       ),
     );
     await writeFile(join(installed.skill, "custom.md"), "My own instructions");

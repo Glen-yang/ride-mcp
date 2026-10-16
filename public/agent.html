@@ -258,7 +258,7 @@ summary {
   border-radius: 16px;
   background: #fcfbf8;
 }
-</style></head><body><main><header><div class="brand"><span>ride</span> / agent</div><span class="tag">Your trading basket</span></header><div id="content"></div></main><script type="module">/*INLINE_VIEW*/const el = (tag, text, cls) => {
+</style></head><body><main><header><div class="brand"><span>Ride Agent</span></div><span class="tag">Your trading basket</span></header><div id="content"></div></main><script type="module">/*INLINE_VIEW*/const el = (tag, text, cls) => {
   const node = document.createElement(tag);
   if (text !== undefined && text !== null) node.textContent = String(text);
   if (cls) node.className = cls;
@@ -313,7 +313,7 @@ function sleeveCards(
           : "Sleeve exit trigger",
         s.stop_loss_pct == null ? null : `${s.stop_loss_pct}%`,
       ),
-      row("Copy mode", s.copy_mode ?? "Ride recommended"),
+      row("Copy mode", s.copy_mode ?? "Ride Agent recommended"),
       ...(s.copy_mode === "fixed"
         ? [row("Fixed margin per source entry", usdc(s.fixed_margin_usdc))]
         : []),
@@ -740,7 +740,7 @@ function render(
         controls,
         "Copy mode",
         [
-          ["ride_recommends", "Ride recommended"],
+          ["ride_recommends", "Ride Agent recommended"],
           ["fixed", "Fixed margin"],
           ["proportional", "Proportional"],
         ],
@@ -948,7 +948,7 @@ function render(
       );
   }
   if (d.updates) {
-    root.append(el("h1", "Ride updates"));
+    root.append(el("h1", "Ride Agent updates"));
     for (const u of d.updates) {
       const c = card(u.kind);
       c.append(
@@ -1307,7 +1307,7 @@ function planEditor(plan, data, callTool, start) {
         r,
         "Copy mode",
         [
-          ["ride_recommends", "Ride recommended"],
+          ["ride_recommends", "Ride Agent recommended"],
           ["fixed", "Fixed margin"],
           ["proportional", "Proportional"],
         ],
@@ -1972,7 +1972,7 @@ function renderDiagnostic(root, d) {
   root.append(c);
 }
 function renderNotifications(root, d, callTool) {
-  root.append(el("h1", "Daily Ride report"));
+  root.append(el("h1", "Daily Ride Agent report"));
   const p = d.notification_preferences,
     c = card("Notification settings");
   const enabled = select(
@@ -2203,7 +2203,7 @@ async function callTool(name, args) {
         );
     }
   } catch (e) {
-    showError(e.message ?? "Ride request failed.");
+    showError(e.message ?? "Ride Agent request failed.");
   } finally {
     busy = false;
     buttons.forEach(({ button, disabled }) => {

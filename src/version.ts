@@ -5,11 +5,17 @@ const metadata = JSON.parse(
 );
 export const VERSION: string = metadata.version;
 export const PACKAGE_NAME: string = metadata.name;
+// Follow the reviewed package metadata after repository transfers and renames.
+export const GITHUB_REPOSITORY: string = new URL(
+  metadata.repository.url.replace(/^git\+/, ""),
+).pathname
+  .replace(/^\//, "")
+  .replace(/\.git$/, "");
 
 export function distributionPackage(distribution: "github" | "npm"): string {
   return distribution === "npm"
     ? `${PACKAGE_NAME}@${VERSION}`
-    : `github:Glen-yang/ride-mcp#v${VERSION}`;
+    : `github:${GITHUB_REPOSITORY}#v${VERSION}`;
 }
 
 export function mcpLaunchArgs(

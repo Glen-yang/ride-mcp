@@ -855,7 +855,7 @@ function renderAuthorizePage(
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Authorize Ride MCP</title>
+  <title>Authorize Ride Agent</title>
   <style>
     :root {
       color-scheme: light;
@@ -997,7 +997,7 @@ function renderAuthorizePage(
 </head>
 <body>
   <main>
-    <h1>Authorize Ride MCP</h1>
+    <h1>Authorize Ride Agent</h1>
     <p>${escapeHtml(clientName)} wants access to your Ride account for Auto-Ride tools.</p>
     <div class="scope">Scopes: ${escapeHtml(scope)}</div>
 
@@ -1076,7 +1076,7 @@ function renderAuthorizePage(
       if (privy) return privy;
       if (privyInitialization) return privyInitialization;
       if (!config.privyAppId) {
-        throw new Error('Ride MCP is missing Privy configuration.');
+        throw new Error('Ride Agent is missing Privy configuration.');
       }
       const options = {
         appId: config.privyAppId,

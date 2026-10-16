@@ -1,4 +1,4 @@
-# Ride MCP conversation flow — 2026-10-15
+# Ride Agent conversation flow — 2026-10-15
 
 This revision follows Ride MCP 1015 and the user's subsequent budget-and-risk-first requirements. It retains the six fixes in `widget-account-v043.md`. Earlier V17/v0.4.2 onboarding and batch descriptions are historical; this document and the current live guide supersede those parts.
 

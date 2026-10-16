@@ -152,7 +152,7 @@ it("the bare command configures each supported client before starting its own re
               assert.equal(
                 JSON.parse(await readFile(path, "utf8")).mcpServers.ride
                   .args[2],
-                "@glenyang/ride-cli@latest",
+                "@onride/agent@latest",
               );
               authenticated = true;
             },
@@ -219,7 +219,7 @@ it("upgrades the published v0.3.2 Skill and npm registration while preserving us
     const config = JSON.parse(await readFile(path, "utf8"));
     assert.equal(config.setting, 42);
     assert.deepEqual(config.mcpServers.other, { url: "https://other.test" });
-    assert.equal(config.mcpServers.ride.args[2], "@glenyang/ride-cli@latest");
+    assert.equal(config.mcpServers.ride.args[2], "@onride/agent@latest");
     assert(
       (
         await readFile(join(home, ".cursor/skills/ride/SKILL.md"), "utf8")

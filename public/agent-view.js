@@ -53,7 +53,7 @@ function sleeveCards(
           : "Sleeve exit trigger",
         s.stop_loss_pct == null ? null : `${s.stop_loss_pct}%`,
       ),
-      row("Copy mode", s.copy_mode ?? "Ride recommended"),
+      row("Copy mode", s.copy_mode ?? "Ride Agent recommended"),
       ...(s.copy_mode === "fixed"
         ? [row("Fixed margin per source entry", usdc(s.fixed_margin_usdc))]
         : []),
@@ -480,7 +480,7 @@ export function render(
         controls,
         "Copy mode",
         [
-          ["ride_recommends", "Ride recommended"],
+          ["ride_recommends", "Ride Agent recommended"],
           ["fixed", "Fixed margin"],
           ["proportional", "Proportional"],
         ],
@@ -688,7 +688,7 @@ export function render(
       );
   }
   if (d.updates) {
-    root.append(el("h1", "Ride updates"));
+    root.append(el("h1", "Ride Agent updates"));
     for (const u of d.updates) {
       const c = card(u.kind);
       c.append(
@@ -1047,7 +1047,7 @@ function planEditor(plan, data, callTool, start) {
         r,
         "Copy mode",
         [
-          ["ride_recommends", "Ride recommended"],
+          ["ride_recommends", "Ride Agent recommended"],
           ["fixed", "Fixed margin"],
           ["proportional", "Proportional"],
         ],
@@ -1712,7 +1712,7 @@ function renderDiagnostic(root, d) {
   root.append(c);
 }
 function renderNotifications(root, d, callTool) {
-  root.append(el("h1", "Daily Ride report"));
+  root.append(el("h1", "Daily Ride Agent report"));
   const p = d.notification_preferences,
     c = card("Notification settings");
   const enabled = select(
