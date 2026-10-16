@@ -6,8 +6,8 @@ financial proposal or calls the executor. `mode: proposal` reads an owned frozen
 proposal; the backend continues to validate its owner. Recommendation and
 preference tools keep their conversation-first outputs.
 
-MCP Apps use the versioned `ui://ride/agent-v6-confirmation.html` resource. The
-previous v5, v4 and v3 URIs remain registered. Only the configured Ride origin is added to
+MCP Apps use the versioned `ui://ride/agent-v7-confirmation.html` resource. The
+previous v6, v5, v4 and v3 URIs remain registered. Only the configured Ride origin is added to
 the resource's frame policy. The card embeds `/agent/card/:proposalId`; its
 content and human approval requests run at the Ride origin, separate from the
 model and the MCP App sandbox. Existing confirmation, OAuth and funding pages
@@ -70,6 +70,29 @@ Ride MCP OAuth, UI rendering, human confirmation session reuse and actual financ
 execution. A paid-plan or trial gate is a client-access blocker, not a Ride or
 OAuth failure. Do not start a subscription or trial on the user's behalf.
 Protocol compatibility and local fixtures do not establish live host support.
+
+The host bridge distinguishes incoming JSON-RPC requests from responses before
+matching pending IDs. Host and view request IDs are independent: a host `ping`
+using the same ID as `ui/initialize` must receive its own response without
+completing initialization. The view answers `ping` and `ui/resource-teardown`,
+cleans up detached frame listeners/timers, and reports its content height through
+`ui/notifications/size-changed` after initialization and layout changes. A fixed
+host height is respected. These protocol fixes require a fresh resource version
+and a client tool-list refresh; they do not change human authorization.
+
+`/fixture/protocol-host` in the loopback preview tests the real postMessage
+protocol without an OpenAI shim. It deliberately sends a colliding ping before
+the initialization response, delivers a zero-USDC demo, resizes its frame, and
+provides a teardown check. No account or financial operation is available.
+
+Claude web can also fail before any view code runs: its own
+`/v1/toolbox/shttp/mcp/...` proxy was observed returning 405 while all matching
+Ride requests succeeded and no Claude GET reached Ride. This matches the open
+[Claude proxy issue](https://github.com/anthropics/claude-ai-mcp/issues/636).
+Do not label that external failure repaired from protocol tests alone or add an
+unauthenticated transport to work around it. Live acceptance must separately
+check a new card, repeated page reload/resume, the normal Ride fallback and
+session reuse on an already completed proposal, without real submission.
 
 October 16 live acceptance: Claude web renders the outer MCP App at its stable
 origin, but its host blocks the nested Ride frame (`chrome-error://chromewebdata/`).

@@ -2017,7 +2017,26 @@ const hostConfig = /*HOST_CONFIG*/{};
 let requestId = 0;
 const pending = new Map();
 const history = [];
+const frameCleanups = new Set();
+let connected = false;
+let fixedHeight = false;
+let lastHeight;
+let sizeObserver;
 let current = window.openai?.toolOutput ?? null;
+function notifySize() {
+  if (!connected || fixedHeight) return;
+  const height = Math.ceil(document.body.getBoundingClientRect().height);
+  if (!Number.isFinite(height) || height <= 0 || height === lastHeight) return;
+  lastHeight = height;
+  window.parent.postMessage(
+    {
+      jsonrpc: "2.0",
+      method: "ui/notifications/size-changed",
+      params: { height },
+    },
+    "*",
+  );
+}
 function showError(message) {
   root.querySelector(".host-error")?.remove();
   root.prepend(el("p", message, "warning error host-error"));
@@ -2030,6 +2049,7 @@ function accept(value) {
   }
 }
 function draw() {
+  for (const cleanup of frameCleanups) cleanup();
   render(
     root,
     current,
@@ -2079,7 +2099,7 @@ function confirmationCard(container, proposal, demo) {
     container.append(state);
     const readyTimeout = setTimeout(() => {
       if (!frame.isConnected) {
-        window.removeEventListener("message", onMessage);
+        cleanup();
         return;
       }
       frame.hidden = true;
@@ -2088,8 +2108,7 @@ function confirmationCard(container, proposal, demo) {
     }, 8000);
     const onMessage = (event) => {
       if (!frame.isConnected) {
-        clearTimeout(readyTimeout);
-        window.removeEventListener("message", onMessage);
+        cleanup();
         return;
       }
       if (
@@ -2116,6 +2135,12 @@ function confirmationCard(container, proposal, demo) {
       if (Number.isFinite(event.data.height))
         frame.style.height = `${Math.min(1400, Math.max(420, event.data.height))}px`;
     };
+    const cleanup = () => {
+      clearTimeout(readyTimeout);
+      window.removeEventListener("message", onMessage);
+      frameCleanups.delete(cleanup);
+    };
+    frameCleanups.add(cleanup);
     window.addEventListener("message", onMessage);
     container.append(
       el(
@@ -2209,7 +2234,34 @@ window.addEventListener("openai:set_globals", (event) =>
 window.addEventListener("message", (event) => {
   if (event.source !== window.parent) return;
   const msg = event.data;
-  const entry = pending.get(msg?.id);
+  if (msg?.jsonrpc !== "2.0") return;
+  // Requests from the host have their own id namespace. A host ping may have
+  // the same id as our pending ui/initialize; it is not its response.
+  if (typeof msg.method === "string" && msg.id !== undefined) {
+    const supported = ["ping", "ui/resource-teardown"].includes(msg.method);
+    if (msg.method === "ui/resource-teardown") {
+      connected = false;
+      sizeObserver?.disconnect();
+      for (const cleanup of frameCleanups) cleanup();
+      for (const entry of pending.values()) clearTimeout(entry.timer);
+      pending.clear();
+    }
+    window.parent.postMessage(
+      {
+        jsonrpc: "2.0",
+        id: msg.id,
+        ...(supported
+          ? { result: {} }
+          : { error: { code: -32601, message: "Method not found" } }),
+      },
+      "*",
+    );
+    return;
+  }
+  const entry =
+    msg.method === undefined && ("result" in msg || "error" in msg)
+      ? pending.get(msg.id)
+      : undefined;
   if (entry) {
     clearTimeout(entry.timer);
     pending.delete(msg.id);
@@ -2217,19 +2269,45 @@ window.addEventListener("message", (event) => {
     else entry.resolve(msg.result);
   }
   if (msg?.method === "ui/notifications/tool-result")
-    accept(msg.params?.structuredContent);
+    if (msg.params?.structuredContent) accept(msg.params.structuredContent);
+    else {
+      const text = msg.params?.content?.find(
+        (item) => item.type === "text",
+      )?.text;
+      if (text) {
+        try {
+          accept(JSON.parse(text));
+        } catch {
+          showError("Ride returned an unreadable result.");
+        }
+      }
+    }
+  if (msg.method === "ui/notifications/host-context-changed") {
+    fixedHeight = typeof msg.params?.containerDimensions?.height === "number";
+    notifySize();
+  }
 });
 if (!window.openai?.callTool)
   request("ui/initialize", {
-    appInfo: { name: "Ride Agent", version: "0.3.0" },
+    appInfo: { name: "Ride Agent", version: "0.5.1" },
     appCapabilities: {},
     protocolVersion: "2026-01-26",
   })
-    .then(() =>
+    .then((result) => {
+      if (result?.protocolVersion !== "2026-01-26")
+        throw Error("The host did not complete Ride card initialization.");
+      connected = true;
+      fixedHeight =
+        typeof result.hostContext?.containerDimensions?.height === "number";
       window.parent.postMessage(
         { jsonrpc: "2.0", method: "ui/notifications/initialized" },
         "*",
-      ),
-    )
+      );
+      if (typeof ResizeObserver !== "undefined") {
+        sizeObserver = new ResizeObserver(notifySize);
+        sizeObserver.observe(document.body);
+      }
+      notifySize();
+    })
     .catch((e) => showError(e.message));
 </script></body></html>
