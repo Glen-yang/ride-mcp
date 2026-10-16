@@ -12,11 +12,11 @@ Observed on 2026-10-16:
 | --- | --- |
 | Old public npm latest | `@glenyang/ride-cli@0.5.0` |
 | New public package | Not published; registry returns 404 |
-| npm CLI | Reauthentication requires glenyang's existing security key |
-| npm organization | Creation/ownership and `onride` availability remain unverified |
+| npm CLI | Authenticated as `glenyang`; account 2FA enabled for authorization and publishing |
+| npm organization | `onride` exists; Free plan, unlimited public packages, $0 monthly; sole current Owner `glenyang`, 2FA enabled |
 | GitHub source | `Glen-yang/ride-mcp`, public; current account has admin permission |
 | GitHub destination | `onride-app/ride-agent`, confirmed target; organization creation pending |
-| Company ownership | Owner/publisher account identities and company contact details pending confirmation |
+| Company ownership | npm Owner verified as `glenyang`; company/founder identity, additional publisher accounts and GitHub business contact details pending confirmation |
 | Production MCP | Retain `https://mcp.onride.me/mcp` and its OAuth issuer |
 | Website/directories | External rollout pending new-package acceptance; no directory submissions verified |
 
